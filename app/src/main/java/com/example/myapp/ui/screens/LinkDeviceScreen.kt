@@ -159,14 +159,14 @@ fun LinkDeviceScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Device Code Input with better styling
+            // Pairing Code Input with better styling
             OutlinedTextField(
                 value = deviceCode,
                 onValueChange = { 
-                    if (it.length <= 10) deviceCode = it 
+                    if (it.length <= 6) deviceCode = it 
                 },
-                label = { Text("Parent Code") },
-                placeholder = { Text("Enter code") },
+                label = { Text("Pairing Code") },
+                placeholder = { Text("Enter 6-digit code") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(62.dp),
@@ -186,7 +186,7 @@ fun LinkDeviceScreen(
                 keyboardActions = KeyboardActions(
                     onDone = {
                         focusManager.clearFocus()
-                        if (deviceCode.length >= 4) onLinkDevice(deviceCode)
+                        if (deviceCode.length == 6) onLinkDevice(deviceCode)
                     }
                 ),
                 singleLine = true,
@@ -210,7 +210,7 @@ fun LinkDeviceScreen(
                     containerColor = GreenPrimary,
                     disabledContainerColor = GreenPrimary.copy(alpha = 0.4f)
                 ),
-                enabled = deviceCode.length >= 4,
+                enabled = deviceCode.length == 6,
                 elevation = ButtonDefaults.buttonElevation(
                     defaultElevation = 3.dp,
                     pressedElevation = 6.dp

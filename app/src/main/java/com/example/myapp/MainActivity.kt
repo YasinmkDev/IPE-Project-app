@@ -72,7 +72,7 @@ class MainActivity : ComponentActivity() {
                 appsList.add(
                     AppInfo(
                         packageName = appInfo.packageName,
-                        appName = appName,
+                        name = appName,
                         versionName = versionName,
                         versionCode = versionCode,
                         isSystemApp = isSystemApp

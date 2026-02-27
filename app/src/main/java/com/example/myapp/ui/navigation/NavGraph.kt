@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import com.example.myapp.services.FirebaseService
 import com.example.myapp.ui.screens.*
 
 @Composable
@@ -55,10 +56,29 @@ fun IPENavGraph(
         composable(route = Screen.LinkDevice.route) {
             LinkDeviceScreen(
                 navController = navController,
-                onLinkDevice = { childId ->
-                    // Store childId in SavedStateHandle to pass through navigation
-                    navController.currentBackStackEntry?.savedStateHandle?.set("CHILD_ID", childId)
-                    navController.navigate(Screen.Permissions.route)
+                onLinkDevice = { pairingCode ->
+                    // Resolve pairing code to childId
+                    FirebaseService.resolvePairingCode(
+                        pairingCode,
+                        onSuccess = { childId, parentId ->
+                            // Mark device as linked by updating linkedAt timestamp
+                            FirebaseService.markDeviceAsLinked(
+                                childId,
+                                parentId,
+                                onSuccess = {
+                                    // Store childId in SavedStateHandle to pass through navigation
+                                    navController.currentBackStackEntry?.savedStateHandle?.set("CHILD_ID", childId)
+                                    navController.navigate(Screen.Permissions.route)
+                                },
+                                onFailure = { exception ->
+                                    println("Error marking device as linked: ${exception.message}")
+                                }
+                            )
+                        },
+                        onFailure = { exception ->
+                            println("Error resolving pairing code: ${exception.message}")
+                        }
+                    )
                 },
                 onScanQR = {
                     navController.navigate(Screen.QRScanner.route)
