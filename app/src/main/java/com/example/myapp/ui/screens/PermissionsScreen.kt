@@ -1,5 +1,9 @@
 package com.example.myapp.ui.screens
 
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -21,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -29,10 +34,12 @@ import androidx.compose.ui.unit.sp
 import com.example.myapp.ui.theme.*
 
 data class PermissionItem(
+    val id: String,
     val icon: ImageVector,
     val title: String,
     val description: String,
-    var isEnabled: Boolean = false
+    var isEnabled: Boolean = false,
+    val action: (Context) -> Unit
 )
 
 @Composable
@@ -41,32 +48,68 @@ fun PermissionsScreen(
     onSkip: () -> Unit,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
+    
     var permissions by remember {
         mutableStateOf(
             listOf(
                 PermissionItem(
+                    id = "usage_access",
                     icon = Icons.Filled.Accessibility,
                     title = "Usage Access",
                     description = "Monitor app usage and screen time statistics",
-                    isEnabled = false
+                    isEnabled = false,
+                    action = { ctx ->
+                        // Open Usage Access Settings
+                        val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                        ctx.startActivity(intent)
+                    }
                 ),
                 PermissionItem(
+                    id = "accessibility",
                     icon = Icons.Filled.Security,
                     title = "Accessibility Service",
                     description = "Enable advanced monitoring and controls",
-                    isEnabled = false
+                    isEnabled = false,
+                    action = { ctx ->
+                        // Open Accessibility Settings
+                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        ctx.startActivity(intent)
+                    }
                 ),
                 PermissionItem(
+                    id = "overlay",
                     icon = Icons.Filled.Layers,
                     title = "Display Over Other Apps",
                     description = "Show overlay for alerts and controls",
-                    isEnabled = false
+                    isEnabled = false,
+                    action = { ctx ->
+                        // Open Overlay/Display Over Other Apps Settings
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+                            intent.data = android.net.Uri.parse("package:" + ctx.packageName)
+                            try {
+                                ctx.startActivity(intent)
+                            } catch (e: Exception) {
+                                // Fallback to app details if direct intent fails
+                                val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                                fallback.data = android.net.Uri.parse("package:" + ctx.packageName)
+                                ctx.startActivity(fallback)
+                            }
+                        }
+                    }
                 ),
                 PermissionItem(
+                    id = "device_admin",
                     icon = Icons.Filled.Lock,
                     title = "Device Admin",
                     description = "Enable remote lock and wipe features",
-                    isEnabled = false
+                    isEnabled = false,
+                    action = { ctx ->
+                        // Open Device Admin Settings
+                        val intent = Intent(Settings.ACTION_SECURITY_SETTINGS)
+                        ctx.startActivity(intent)
+                    }
                 )
             )
         )
@@ -160,12 +203,15 @@ fun PermissionsScreen(
 
             // Permissions Items
             itemsIndexed(permissions) { index, permission ->
-                PermissionCard(
+                PermissionCardWithAction(
                     permission = permission,
                     onToggle = { isEnabled ->
                         permissions = permissions.toMutableList().apply {
                             this[index] = this[index].copy(isEnabled = isEnabled)
                         }
+                    },
+                    onRequestPermission = {
+                        permission.action(context)
                     }
                 )
             }
@@ -205,9 +251,17 @@ fun PermissionsScreen(
                 .background(Color.White)
                 .padding(horizontal = 24.dp, vertical = 16.dp)
         ) {
-            // Grant All Button
+            // Grant All Button - launches all permission intents
             Button(
-                onClick = onGrantAll,
+                onClick = {
+                    // Launch each permission's settings
+                    permissions.forEach { permission ->
+                        permission.action(context)
+                    }
+                    // After launching intents, immediately navigate to next screen
+                    // User will manually verify permissions after returning
+                    onGrantAll()
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
@@ -255,9 +309,10 @@ fun PermissionsScreen(
 }
 
 @Composable
-private fun PermissionCard(
+private fun PermissionCardWithAction(
     permission: PermissionItem,
-    onToggle: (Boolean) -> Unit
+    onToggle: (Boolean) -> Unit,
+    onRequestPermission: () -> Unit
 ) {
     val cardColor by animateColorAsState(
         targetValue = if (permission.isEnabled) GreenSurface else Color.White,
@@ -282,7 +337,7 @@ private fun PermissionCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Icon with background
+            // Icon with background - clickable to open settings
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -293,12 +348,26 @@ private fun PermissionCard(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = permission.icon,
-                    contentDescription = permission.title,
-                    tint = if (permission.isEnabled) GreenPrimary else GreenPrimary.copy(alpha = 0.7f),
-                    modifier = Modifier.size(24.dp)
-                )
+                Button(
+                    onClick = onRequestPermission,
+                    modifier = Modifier
+                        .size(48.dp),
+                    shape = CircleShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Transparent
+                    ),
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation = 0.dp,
+                        pressedElevation = 0.dp
+                    )
+                ) {
+                    Icon(
+                        imageVector = permission.icon,
+                        contentDescription = permission.title,
+                        tint = if (permission.isEnabled) GreenPrimary else GreenPrimary.copy(alpha = 0.7f),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(14.dp))

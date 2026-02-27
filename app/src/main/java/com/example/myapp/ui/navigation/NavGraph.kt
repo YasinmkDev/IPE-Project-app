@@ -5,8 +5,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import com.example.myapp.services.FirebaseService
 import com.example.myapp.ui.screens.*
 
@@ -66,9 +68,8 @@ fun IPENavGraph(
                                 childId,
                                 parentId,
                                 onSuccess = {
-                                    // Store childId in SavedStateHandle to pass through navigation
-                                    navController.currentBackStackEntry?.savedStateHandle?.set("CHILD_ID", childId)
-                                    navController.navigate(Screen.Permissions.route)
+                                    // Navigate to Permissions with childId parameter
+                                    navController.navigate(Screen.Permissions.createRoute(childId))
                                 },
                                 onFailure = { exception ->
                                     println("Error marking device as linked: ${exception.message}")
@@ -108,17 +109,24 @@ fun IPENavGraph(
         }
 
         // Screen 4: Permissions
-        composable(route = Screen.Permissions.route) {
+        composable(
+            route = Screen.Permissions("").route,
+            arguments = listOf(
+                navArgument("childId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val childId = backStackEntry.arguments?.getString("childId") ?: ""
+            
             PermissionsScreen(
                 onGrantAll = {
-                    navController.navigate(Screen.SetupComplete.route) {
+                    navController.navigate(Screen.SetupComplete.createRoute(childId)) {
                         popUpTo(Screen.Welcome.route) {
                             inclusive = false
                         }
                     }
                 },
                 onSkip = {
-                    navController.navigate(Screen.SetupComplete.route) {
+                    navController.navigate(Screen.SetupComplete.createRoute(childId)) {
                         popUpTo(Screen.Welcome.route) {
                             inclusive = false
                         }
@@ -131,11 +139,13 @@ fun IPENavGraph(
         }
 
         // Screen 5: Setup Complete
-        composable(route = Screen.SetupComplete.route) { backStackEntry ->
-            // Retrieve childId from navigation back stack
-            val childId = remember {
-                navController.previousBackStackEntry?.savedStateHandle?.get<String>("CHILD_ID") ?: ""
-            }
+        composable(
+            route = Screen.SetupComplete("").route,
+            arguments = listOf(
+                navArgument("childId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val childId = backStackEntry.arguments?.getString("childId") ?: ""
 
             SetupCompleteScreen(
                 onFinish = {
