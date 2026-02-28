@@ -23,8 +23,8 @@ class DeviceAdminReceiver : DeviceAdminReceiver() {
         Log.d(TAG, "Password changed")
     }
 
-    override fun onLockTaskModeEntering(context: Context, intent: Intent) {
-        super.onLockTaskModeEntering(context, intent)
+    override fun onLockTaskModeEntering(context: Context, intent: Intent, pkg: String) {
+        super.onLockTaskModeEntering(context, intent, pkg)
         Log.d(TAG, "Lock task mode entering")
     }
 
