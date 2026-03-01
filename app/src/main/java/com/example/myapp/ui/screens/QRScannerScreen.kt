@@ -1,6 +1,9 @@
 package com.example.myapp.ui.screens
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.provider.Settings
 import android.util.Size
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -14,6 +17,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,6 +48,13 @@ import com.example.myapp.ui.theme.GreenPrimaryDark
 import com.example.myapp.ui.theme.GreenSurface
 import com.example.myapp.ui.theme.IPETheme
 import java.util.concurrent.Executors
+import android.os.Handler
+import android.os.Looper
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.graphics.toArgb
+import androidx.lifecycle.LifecycleOwner
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -50,12 +62,46 @@ fun QRScannerScreen(
     onQRCodeScanned: (String) -> Unit,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
+    val (cameraProvider, setCameraProvider) = remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    val (isCameraInitializing, setIsCameraInitializing) = remember { mutableStateOf(false) }
+    val (cameraError, setCameraError) = remember { mutableStateOf<String?>(null) }
+
+    // Check if permission is permanently denied
+    val isPermissionPermanentlyDenied = remember(cameraPermissionState) {
+        !cameraPermissionState.status.isGranted && 
+        !cameraPermissionState.status.shouldShowRationale
+    }
 
     LaunchedEffect(Unit) {
         if (!cameraPermissionState.status.isGranted) {
             cameraPermissionState.launchPermissionRequest()
         }
+    }
+
+    // Initialize camera when permission is granted
+    LaunchedEffect(cameraPermissionState.status.isGranted) {
+        if (cameraPermissionState.status.isGranted && cameraProvider == null) {
+            initializeCamera(
+                context = context,
+                lifecycleOwner = lifecycleOwner,
+                onQRCodeScanned = onQRCodeScanned,
+                setCameraProvider = setCameraProvider,
+                setIsCameraInitializing = setIsCameraInitializing,
+                setCameraError = setCameraError
+            )
+        }
+    }
+
+    // Cleanup camera when permission is denied or screen is closed
+    DisposableEffect(cameraPermissionState.status.isGranted) {
+        if (!cameraPermissionState.status.isGranted && cameraProvider != null) {
+            cleanupCamera(cameraProvider)
+            setCameraProvider(null)
+        }
+        onDispose { }
     }
 
     Box(
@@ -64,24 +110,390 @@ fun QRScannerScreen(
             .background(Color.Black)
     ) {
         when {
-            cameraPermissionState.status.isGranted -> {
-                CameraPreview(
-                    onQRCodeScanned = onQRCodeScanned,
+            isCameraInitializing -> {
+                // Show loading state
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        color = GreenPrimary,
+                        modifier = Modifier.size(48.dp)
+                    )
+                }
+            }
+            cameraError != null -> {
+                // Show error state
+                ErrorContent(
+                    errorMessage = cameraError!!,
+                    onRetry = {
+                        setCameraError(null)
+                        initializeCamera(
+                            context = context,
+                            lifecycleOwner = lifecycleOwner,
+                            onQRCodeScanned = onQRCodeScanned,
+                            setCameraProvider = setCameraProvider,
+                            setIsCameraInitializing = setIsCameraInitializing,
+                            setCameraError = setCameraError
+                        )
+                    },
                     onBack = onBack
                 )
             }
+            cameraPermissionState.status.isGranted -> {
+                // Show camera preview
+                if (cameraProvider != null) {
+                    CameraPreview(
+                        cameraProvider = cameraProvider,
+                        onQRCodeScanned = onQRCodeScanned,
+                        onBack = onBack
+                    )
+                }
+            }
             cameraPermissionState.status.shouldShowRationale -> {
+                // Show rationale
                 PermissionDeniedContent(
                     onRequestPermission = { cameraPermissionState.launchPermissionRequest() },
+                    onBack = onBack
+                )
+            }
+            isPermissionPermanentlyDenied -> {
+                // Show permanently denied state
+                PermissionPermanentlyDeniedContent(
+                    onOpenSettings = {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        intent.data = android.net.Uri.parse("package:" + context.packageName)
+                        context.startActivity(intent)
+                    },
                     onBack = onBack
                 )
             }
             else -> {
+                // Show initial permission request
                 PermissionDeniedContent(
                     onRequestPermission = { cameraPermissionState.launchPermissionRequest() },
                     onBack = onBack
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun initializeCamera(
+    context: Context,
+    lifecycleOwner: LifecycleOwner,
+    onQRCodeScanned: (String) -> Unit,
+    setCameraProvider: (ProcessCameraProvider?) -> Unit,
+    setIsCameraInitializing: (Boolean) -> Unit,
+    setCameraError: (String?) -> Unit
+) {
+    setIsCameraInitializing(true)
+    setCameraError(null)
+    
+    try {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+        
+        cameraProviderFuture.addListener({
+            try {
+                val cameraProvider = cameraProviderFuture.get()
+                
+                // Setup camera preview and image analysis
+                val preview = CameraPreview.Builder()
+                    .build()
+                    .also {
+                        it.setSurfaceProvider(PreviewView(context).surfaceProvider)
+                    }
+                
+                val imageAnalysis = ImageAnalysis.Builder()
+                    .setTargetResolution(Size(1280, 720))
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+                    .also { analysis ->
+                        analysis.setAnalyzer(
+                            Executors.newSingleThreadExecutor()
+                        ) { imageProxy ->
+                            val buffer = imageProxy.planes[0].buffer
+                            val data = ByteArray(buffer.remaining())
+                            buffer.get(data)
+                            buffer.rewind()
+
+                            val source = PlanarYUVLuminanceSource(
+                                data,
+                                imageProxy.width,
+                                imageProxy.height,
+                                0,
+                                0,
+                                imageProxy.width,
+                                imageProxy.height,
+                                false
+                            )
+
+                            val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
+                            val reader = MultiFormatReader()
+
+                            try {
+                                val result = reader.decode(binaryBitmap)
+                                onQRCodeScanned(result.text)
+                            } catch (e: NotFoundException) {
+                                // No QR code found
+                            } finally {
+                                imageProxy.close()
+                            }
+                        }
+                    }
+
+                // Bind camera use cases
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(
+                    lifecycleOwner,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    preview,
+                    imageAnalysis
+                )
+
+                setCameraProvider(cameraProvider)
+                setIsCameraInitializing(false)
+            } catch (e: Exception) {
+                setCameraError("Failed to initialize camera: ${e.message}")
+                setIsCameraInitializing(false)
+            }
+        }, ContextCompat.getMainExecutor(context))
+        
+    } catch (e: Exception) {
+        setCameraError("Failed to initialize camera: ${e.message}")
+        setIsCameraInitializing(false)
+    }
+}
+
+@Composable
+private fun cleanupCamera(cameraProvider: ProcessCameraProvider) {
+    try {
+        cameraProvider.unbindAll()
+    } catch (e: Exception) {
+        // Log error but don't crash
+        e.printStackTrace()
+    }
+}
+
+@Composable
+private fun CameraPreview(
+    cameraProvider: ProcessCameraProvider,
+    onQRCodeScanned: (String) -> Unit,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    
+    AndroidView(
+        factory = { ctx ->
+            val previewView = PreviewView(ctx)
+            
+            // Setup camera preview with the existing provider
+            val preview = CameraPreview.Builder()
+                .build()
+                .also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+
+            try {
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(
+                    LocalLifecycleOwner.current,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    preview
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            previewView
+        },
+        modifier = Modifier.fillMaxSize()
+    )
+
+    // Overlay with scanner frame
+    ScannerOverlay(
+        onBack = onBack
+    )
+}
+
+@Composable
+private fun ErrorContent(
+    errorMessage: String,
+    onRetry: () -> Unit,
+    onBack: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier.align(Alignment.Start)
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = GreenPrimary
+            )
+        }
+
+        Spacer(modifier = Modifier.height(48.dp))
+
+        // Error icon
+        Box(
+            modifier = Modifier
+                .size(80.dp)
+                .background(Color.Red.copy(alpha = 0.2f), RoundedCornerShape(40.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Error,
+                contentDescription = "Error",
+                tint = Color.Red,
+                modifier = Modifier.size(40.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "Camera Error",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.Red,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+            text = errorMessage,
+            fontSize = 14.sp,
+            color = Color.Gray,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Button(
+            onClick = onRetry,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            shape = RoundedCornerShape(26.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = GreenPrimary)
+        ) {
+            Text(
+                text = "Retry",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        TextButton(onClick = onBack) {
+            Text(
+                text = "Go Back",
+                color = Color.Gray
+            )
+        }
+    }
+}
+
+@Composable
+private fun PermissionPermanentlyDeniedContent(
+    onOpenSettings: () -> Unit,
+    onBack: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier.align(Alignment.Start)
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = GreenPrimary
+            )
+        }
+
+        Spacer(modifier = Modifier.height(48.dp))
+
+        // Warning icon
+                        Box(
+                            modifier = Modifier
+                                .size(80.dp)
+                                .background(Color.Yellow.copy(alpha = 0.2f), RoundedCornerShape(40.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Warning,
+                                contentDescription = "Warning",
+                                tint = Color.Yellow,
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        Text(
+                            text = "Permission Permanently Denied",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Yellow,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "You have permanently denied camera permission. Please enable it in app settings.",
+                            fontSize = 14.sp,
+                            color = Color.Gray,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(32.dp))
+
+                        Button(
+                            onClick = onOpenSettings,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            shape = RoundedCornerShape(26.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Yellow)
+                        ) {
+            Text(
+                text = "Open Settings",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        TextButton(onClick = onBack) {
+            Text(
+                text = "Cancel",
+                color = Color.Gray
+            )
         }
     }
 }
