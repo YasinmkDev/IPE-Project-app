@@ -8,7 +8,7 @@ from pathlib import Path
 
 class ProjectValidator:
     def __init__(self):
-        self.project_root = Path(__file__).parent.parent
+        self.project_root = Path("/vercel/share/v0-project")
         self.app_dir = self.project_root / "app" / "src" / "main"
         self.errors = []
         self.warnings = []
@@ -26,10 +26,10 @@ class ProjectValidator:
 
     def validate_manifest(self):
         """Validate AndroidManifest.xml"""
-        manifest_path = self.app_dir / "AndroidManifest.xml"
+        manifest_path = self.project_root / "app" / "src" / "main" / "AndroidManifest.xml"
         
         if not manifest_path.exists():
-            self.log_error("AndroidManifest.xml not found")
+            self.log_error(f"AndroidManifest.xml not found at {manifest_path}")
             return False
 
         with open(manifest_path, 'r') as f:
@@ -80,7 +80,7 @@ class ProjectValidator:
 
     def validate_kotlin_files(self):
         """Validate all Kotlin source files exist"""
-        java_dir = self.app_dir / "java" / "com" / "example" / "myapp"
+        java_dir = self.project_root / "app" / "src" / "main" / "java" / "com" / "example" / "myapp"
         
         required_files = [
             "security/SecurityManager.kt",
@@ -98,7 +98,7 @@ class ProjectValidator:
             if file_path.exists():
                 self.log_success(f"Found Kotlin file: {file}")
             else:
-                self.log_error(f"Missing Kotlin file: {file}")
+                self.log_error(f"Missing Kotlin file: {file} at {file_path}")
                 return False
         
         return True
