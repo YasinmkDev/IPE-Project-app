@@ -20,11 +20,22 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
         }
     }
     compileOptions {
@@ -67,6 +78,16 @@ dependencies {
 
     // Material Components for CardView
     implementation("com.google.android.material:material:1.11.0")
+
+    // Security Libraries for root detection and protection
+    implementation("org.w3c:dom:2.3.0-jaxb-1.0.6")
+    implementation("com.scottyab:rootbeer-lib:0.1.0")
+    
+    // Encrypted Shared Preferences
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    
+    // TrustKit for certificate pinning
+    implementation("com.datatheorem:android-trustkit:1.1.5")
 
     // Additional dependencies for missing classes
     implementation("androidx.core:core-ktx:1.12.0")
