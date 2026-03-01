@@ -85,9 +85,6 @@ dependencies {
     
     // Encrypted Shared Preferences
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    
-    // TrustKit for certificate pinning
-    implementation("com.datatheorem:android-trustkit:1.1.5")
 
     // Additional dependencies for missing classes
     implementation("androidx.core:core-ktx:1.12.0")

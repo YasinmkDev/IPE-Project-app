@@ -63,7 +63,7 @@ class StorageRestrictionService : Service() {
                 }
 
                 private fun handleFileDelete(dir: File, path: String?) {
-                    if (path != null && path.endsWith(".txt", ".pdf", ".doc")) {
+                    if (path != null && (path.endsWith(".txt") || path.endsWith(".pdf") || path.endsWith(".doc"))) {
                         Log.w(TAG, "Sensitive file deleted from ${dir.name}: $path")
                     }
                 }

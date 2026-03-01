@@ -143,7 +143,7 @@ fun QRScannerScreen(
             cameraPermissionState.status.isGranted -> {
                 // Show camera preview
                 if (cameraProvider != null) {
-                    CameraPreview(
+                    CameraViewScreen(
                         cameraProvider = cameraProvider,
                         onQRCodeScanned = onQRCodeScanned,
                         onBack = onBack
@@ -179,7 +179,6 @@ fun QRScannerScreen(
     }
 }
 
-@Composable
 private fun initializeCamera(
     context: Context,
     lifecycleOwner: LifecycleOwner,
@@ -191,8 +190,7 @@ private fun initializeCamera(
     setIsCameraInitializing(true)
     setCameraError(null)
     
-    try {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         
         cameraProviderFuture.addListener({
             try {
@@ -259,14 +257,8 @@ private fun initializeCamera(
                 setIsCameraInitializing(false)
             }
         }, ContextCompat.getMainExecutor(context))
-        
-    } catch (e: Exception) {
-        setCameraError("Failed to initialize camera: ${e.message}")
-        setIsCameraInitializing(false)
-    }
 }
 
-@Composable
 private fun cleanupCamera(cameraProvider: ProcessCameraProvider) {
     try {
         cameraProvider.unbindAll()
@@ -277,12 +269,13 @@ private fun cleanupCamera(cameraProvider: ProcessCameraProvider) {
 }
 
 @Composable
-private fun CameraPreview(
+private fun CameraViewScreen(
     cameraProvider: ProcessCameraProvider,
     onQRCodeScanned: (String) -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     
     AndroidView(
         factory = { ctx ->
@@ -298,7 +291,7 @@ private fun CameraPreview(
             try {
                 cameraProvider.unbindAll()
                 cameraProvider.bindToLifecycle(
-                    LocalLifecycleOwner.current,
+                    lifecycleOwner,
                     CameraSelector.DEFAULT_BACK_CAMERA,
                     preview
                 )
@@ -499,7 +492,7 @@ private fun PermissionPermanentlyDeniedContent(
 }
 
 @Composable
-private fun CameraPreview(
+private fun CameraPreviewAlternative(
     onQRCodeScanned: (String) -> Unit,
     onBack: () -> Unit
 ) {

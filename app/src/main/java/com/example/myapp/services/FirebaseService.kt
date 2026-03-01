@@ -11,6 +11,7 @@ object FirebaseService {
     data class ChildProfile(
         val childId: String = "",
         val parentId: String = "",
+        val age: Int = 0,
         val blockedApps: List<String> = emptyList(),
         val blockedWebsites: List<String> = emptyList(),
         val allowedApps: List<String> = emptyList(),
