@@ -101,8 +101,9 @@ class MonitoringService : Service() {
             com.example.myapp.models.AgeGroup.fromAge(childAge)
         )
         
-        // Update Accessibility Service with the new blocked list
+        // Update Accessibility Service with the new blocked lists
         MyAccessibilityService.setBlockedApps(blockedAppsList)
+        MyAccessibilityService.setBlockedWebsites(blockedWebsitesList)
     }
 
     private fun startMonitoring() {
