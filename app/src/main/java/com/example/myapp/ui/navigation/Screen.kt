@@ -9,6 +9,16 @@ sealed class Screen(val route: String) {
             fun createRoute(childId: String) = "permissions/$childId"
         }
     }
+    data class PermissionDetail(val childId: String, val permissionId: String) : Screen("permission_detail/{childId}/{permissionId}") {
+        companion object {
+            fun createRoute(childId: String, permissionId: String) = "permission_detail/$childId/$permissionId"
+        }
+    }
+    data class AlreadyLinked(val childId: String) : Screen("already_linked/{childId}") {
+        companion object {
+            fun createRoute(childId: String) = "already_linked/$childId"
+        }
+    }
     data class SetupComplete(val childId: String) : Screen("setup_complete/{childId}") {
         companion object {
             fun createRoute(childId: String) = "setup_complete/$childId"

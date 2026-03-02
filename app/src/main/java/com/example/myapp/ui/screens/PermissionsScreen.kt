@@ -65,7 +65,8 @@ data class PermissionItem(
 fun PermissionsScreen(
     onGrantAll: () -> Unit,
     onSkip: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onPermissionDetail: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -325,7 +326,8 @@ fun PermissionsScreen(
                         }
                     },
                     onRequestPermission = {
-                        permission.action(context)
+                        // Navigate to permission detail screen
+                        onPermissionDetail(permission.id)
                     }
                 )
             }
@@ -365,29 +367,17 @@ fun PermissionsScreen(
                 .background(Color.White)
                 .padding(horizontal = 24.dp, vertical = 16.dp)
         ) {
-            // Grant All Button - launches all permission intents
+            // Continue Button - Check permissions and proceed
             Button(
                 onClick = {
                     isLoading = true
-                    // Launch each permission's settings
-                    permissions.forEach { permission ->
-                        if (!permission.isEnabled) {
-                            permission.action(context)
-                        }
-                    }
-                    
                     scope.launch {
-                        // Wait a bit for user to interact with settings
-                        delay(2000)
+                        // Recheck all permissions
                         permissions = checkPermissions(context, permissions)
-                        
-                        delay(3000)
-                        permissions = checkPermissions(context, permissions)
-                        
+                        delay(1000)
                         isLoading = false
-                        if (permissions.all { it.isEnabled }) {
-                            onGrantAll()
-                        }
+                        // Always allow to continue - user can grant permissions individually
+                        onGrantAll()
                     }
                 },
                 modifier = Modifier
@@ -417,7 +407,7 @@ fun PermissionsScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (allGranted) "All Permissions Granted" else "Grant All Permissions",
+                        text = if (allGranted) "All Set ✓" else "Continue",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White

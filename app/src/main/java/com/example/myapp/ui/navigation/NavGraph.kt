@@ -134,6 +134,51 @@ fun IPENavGraph(
                 },
                 onBack = {
                     navController.popBackStack()
+                },
+                onPermissionDetail = { permissionId ->
+                    navController.navigate(Screen.PermissionDetail.createRoute(childId, permissionId))
+                }
+            )
+        }
+
+        // Screen 4.5: Permission Detail
+        composable(
+            route = Screen.PermissionDetail("", "").route,
+            arguments = listOf(
+                navArgument("childId") { type = NavType.StringType },
+                navArgument("permissionId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val childId = backStackEntry.arguments?.getString("childId") ?: ""
+            val permissionId = backStackEntry.arguments?.getString("permissionId") ?: ""
+
+            PermissionDetailScreen(
+                permissionId = permissionId,
+                onBack = {
+                    navController.popBackStack()
+                },
+                onPermissionGranted = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        // Screen 4.7: Already Linked
+        composable(
+            route = Screen.AlreadyLinked("").route,
+            arguments = listOf(
+                navArgument("childId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val childId = backStackEntry.arguments?.getString("childId") ?: ""
+
+            AlreadyLinkedScreen(
+                onContinue = {
+                    navController.navigate(Screen.SetupComplete.createRoute(childId)) {
+                        popUpTo(Screen.Welcome.route) {
+                            inclusive = false
+                        }
+                    }
                 }
             )
         }
