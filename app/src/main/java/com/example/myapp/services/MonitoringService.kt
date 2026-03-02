@@ -1,5 +1,6 @@
 package com.example.myapp.services
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,16 +8,17 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.myapp.R
 import com.example.myapp.ui.activities.BlockedAppActivity
-import com.example.myapp.security.SecurityManager
+import com.example.myapp.MainActivity
 import com.example.myapp.models.AgeGroupManager
-import com.example.myapp.utils.PackageController
 import java.util.Timer
 import java.util.TimerTask
 
@@ -25,65 +27,68 @@ class MonitoringService : Service() {
     private val NOTIFICATION_ID = 123
     private var timer: Timer? = null
     private var currentChildId: String? = null
-    private var blockedAppsList: List<String> = emptyList()
-    private var blockedWebsitesList: List<String> = emptyList()
-    private var childAge: Int = 0
-    private var screenTimeMinutes: Int = 0
-    private var screenTimeElapsed: Long = 0
-    private var lastCheckTime: Long = 0
     private val ageGroupManager = AgeGroupManager()
-    private var packageController: PackageController? = null
-    private var securityCheckInterval = 0L
+    
+    // Screen Time Tracking variables
+    private var lastAppPackage: String? = null
+    private var appStartTime: Long = 0
+    private val appDurations = mutableMapOf<String, Long>()
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification())
-        packageController = PackageController(this)
-        
         Log.d(TAG, "Service onCreate")
+        createNotificationChannel()
+        
+        val notification = createNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
     }
 
-    override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        currentChildId = intent.getStringExtra("CHILD_ID")
-        childAge = intent.getIntExtra("CHILD_AGE", 10)
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val childId = intent?.getStringExtra("CHILD_ID") ?: getStoredChildId()
+        currentChildId = childId
+        
         Log.d(TAG, "Service onStartCommand with childId: $currentChildId")
 
-        currentChildId?.let { childId ->
+        val notification = createNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+
+        childId?.let { id ->
             FirebaseService.fetchChildProfile(
-                childId,
-                onSuccess = { profile ->
-                    updateMonitoringData(profile)
-                },
-                onFailure = { exception ->
-                    Log.e(TAG, "Error fetching profile: ${exception.message}")
-                }
+                id,
+                onSuccess = { profile -> updateMonitoringData(profile) },
+                onFailure = { Log.e(TAG, "Error fetching profile") }
             )
 
             FirebaseService.listenToChildProfileUpdates(
-                childId,
-                onUpdate = { profile ->
-                    updateMonitoringData(profile)
-                },
-                onError = { exception ->
-                    Log.e(TAG, "Error listening to updates: ${exception.message}")
-                }
+                id,
+                onUpdate = { profile -> updateMonitoringData(profile) },
+                onError = { Log.e(TAG, "Error listening updates") }
             )
-
             startMonitoring()
         }
 
         return START_STICKY
     }
 
+    private fun getStoredChildId(): String? {
+        val protectedContext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            createDeviceProtectedStorageContext()
+        } else this
+        return protectedContext.getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
+            .getString("CHILD_ID", null)
+    }
+
     private fun updateMonitoringData(profile: FirebaseService.ChildProfile) {
-        blockedAppsList = profile.blockedApps
-        blockedWebsitesList = profile.blockedWebsites
-        childAge = profile.age
-        
-        // Update Accessibility Service
-        MyAccessibilityService.setBlockedApps(blockedAppsList)
-        MyAccessibilityService.setBlockedWebsites(blockedWebsitesList)
+        MyAccessibilityService.setBlockedApps(profile.blockedApps)
+        MyAccessibilityService.setBlockedWebsites(profile.blockedWebsites)
         MyAccessibilityService.setStorageRestricted(profile.storageRestricted)
         MyAccessibilityService.setProtectionActive(profile.protectionActive)
     }
@@ -95,35 +100,114 @@ class MonitoringService : Service() {
             override fun run() {
                 trackScreenTime()
             }
-        }, 0, MONITORING_INTERVAL)
+        }, 0, 5000) // Check every 5 seconds
     }
 
     private fun trackScreenTime() {
-        // screen time logic...
+        val currentApp = getCurrentForegroundPackage() ?: return
+        val currentTime = System.currentTimeMillis()
+
+        if (currentApp != lastAppPackage) {
+            // App has changed, save duration for the previous app
+            lastAppPackage?.let { pkg ->
+                val duration = currentTime - appStartTime
+                val totalSoFar = appDurations.getOrDefault(pkg, 0L)
+                val newTotal = totalSoFar + duration
+                appDurations[pkg] = newTotal
+                
+                // Upload to Firebase
+                currentChildId?.let { id ->
+                    FirebaseService.updateAppScreenTime(id, FirebaseService.ScreenTimeData(
+                        packageName = pkg,
+                        appName = getAppLabel(pkg),
+                        totalTimeVisible = newTotal
+                    ))
+                }
+            }
+            // Start tracking new app
+            lastAppPackage = currentApp
+            appStartTime = currentTime
+        } else {
+            // Same app still running, update current total in memory
+            val duration = currentTime - appStartTime
+            val totalSoFar = appDurations.getOrDefault(currentApp, 0L)
+            // Periodically upload even if app doesn't change
+            if (duration > 30000) { // every 30 seconds
+                currentChildId?.let { id ->
+                    FirebaseService.updateAppScreenTime(id, FirebaseService.ScreenTimeData(
+                        packageName = currentApp,
+                        appName = getAppLabel(currentApp),
+                        totalTimeVisible = totalSoFar + duration
+                    ))
+                }
+            }
+        }
+    }
+
+    private fun getCurrentForegroundPackage(): String? {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                am.appTasks.firstOrNull()?.taskInfo?.topActivity?.packageName
+            } else {
+                @Suppress("DEPRECATION")
+                am.getRunningTasks(1).firstOrNull()?.topActivity?.packageName
+            }
+        } catch (e: Exception) { null }
+    }
+
+    private fun getAppLabel(packageName: String): String {
+        return try {
+            val pm = packageManager
+            val info = pm.getApplicationInfo(packageName, 0)
+            pm.getApplicationLabel(info).toString()
+        } catch (e: Exception) { packageName }
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.d(TAG, "Task removed - scheduling aggressive restart")
+        val restartServiceIntent = Intent(applicationContext, this.javaClass).apply {
+            setPackage(packageName)
+            putExtra("CHILD_ID", currentChildId)
+        }
+        val restartServicePendingIntent = PendingIntent.getService(
+            applicationContext, 1, restartServiceIntent, 
+            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 1000, restartServicePendingIntent)
+        }
+        super.onTaskRemoved(rootIntent)
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Monitoring Service Channel",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            channel.description = "Channel for Parental Control Monitoring Service"
+            val channel = NotificationChannel(CHANNEL_ID, "IPE Guard Service", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Keeps the parental protection active"
+                setShowBadge(true)
+                enableLights(true)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
             val notificationManager = getSystemService(NotificationManager::class.java)
             notificationManager.createNotificationChannel(channel)
         }
     }
 
     private fun createNotification(): Notification {
-        val notificationIntent = Intent(this, BlockedAppActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE)
+        val openAppIntent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(this, 0, openAppIntent, PendingIntent.FLAG_IMMUTABLE)
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("IPE Monitoring Service")
-            .setContentText("Parental control protection is active")
+            .setContentTitle("IPE Protection is ON")
+            .setContentText("Your device is currently being protected.")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
+            .setOngoing(true) 
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }
 
@@ -131,6 +215,5 @@ class MonitoringService : Service() {
 
     companion object {
         private const val TAG = "MonitoringService"
-        private const val MONITORING_INTERVAL = 1000L
     }
 }

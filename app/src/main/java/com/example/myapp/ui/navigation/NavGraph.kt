@@ -15,11 +15,13 @@ import com.example.myapp.ui.screens.*
 @Composable
 fun IPENavGraph(
     navController: NavHostController,
-    onSetupComplete: (String) -> Unit
+    startDestination: String = Screen.Welcome.route,
+    onSetupComplete: (String) -> Unit,
+    onExit: () -> Unit
 ) {
     NavHost(
         navController = navController,
-        startDestination = Screen.Welcome.route,
+        startDestination = startDestination,
         enterTransition = {
             slideInHorizontally(
                 initialOffsetX = { it },
@@ -56,16 +58,16 @@ fun IPENavGraph(
         composable(route = Screen.LinkDevice.route) {
             LinkDeviceScreen(
                 navController = navController,
-                onLinkDevice = { pairingCode ->
+                onLinkDevice = { pairingCode, onResult ->
                     FirebaseService.resolvePairingCode(
                         pairingCode,
                         onSuccess = { childId, parentId ->
-                            // DO NOT call markDeviceAsLinked yet.
-                            // Just navigate to permissions.
+                            onResult(true)
                             navController.navigate(Screen.Permissions.createRoute(childId, parentId))
                         },
                         onFailure = { exception ->
                             println("Error resolving pairing code: ${exception.message}")
+                            onResult(false)
                         }
                     )
                 },
@@ -131,8 +133,6 @@ fun IPENavGraph(
                 navArgument("permissionId") { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val childId = backStackEntry.arguments?.getString("childId") ?: ""
-            val parentId = backStackEntry.arguments?.getString("parentId") ?: ""
             val permissionId = backStackEntry.arguments?.getString("permissionId") ?: ""
 
             PermissionDetailScreen(
@@ -147,11 +147,10 @@ fun IPENavGraph(
             arguments = listOf(
                 navArgument("childId") { type = NavType.StringType }
             )
-        ) { backStackEntry ->
-            val childId = backStackEntry.arguments?.getString("childId") ?: ""
+        ) { 
             AlreadyLinkedScreen(
                 onContinue = {
-                    onSetupComplete(childId)
+                    onExit()
                 }
             )
         }
@@ -168,7 +167,6 @@ fun IPENavGraph(
 
             SetupCompleteScreen(
                 onFinish = {
-                    // ONLY MARK AS LINKED NOW!
                     FirebaseService.markDeviceAsLinked(
                         childId,
                         parentId,

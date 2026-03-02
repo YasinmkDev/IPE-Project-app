@@ -181,12 +181,7 @@ fun WelcomeScreen(
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "→",
-                    fontSize = 18.sp,
-                    color = Color.White
-                )
+
             }
 
             Spacer(modifier = Modifier.height(48.dp))

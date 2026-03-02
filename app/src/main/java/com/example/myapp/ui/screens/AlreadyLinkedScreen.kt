@@ -1,10 +1,11 @@
 package com.example.myapp.ui.screens
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Devices
@@ -34,15 +35,18 @@ fun AlreadyLinkedScreen(
     deviceName: String = "Samsung Galaxy A12",
     onContinue: () -> Unit
 ) {
+    val scrollState = rememberScrollState()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
+            .verticalScroll(scrollState)
             .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Success Icon
+        Spacer(modifier = Modifier.height(40.dp))
+
         Box(
             modifier = Modifier
                 .size(100.dp)
@@ -60,9 +64,8 @@ fun AlreadyLinkedScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Title
         Text(
-            text = "Device Already Linked",
+            text = "Device Protected",
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = GreenPrimaryDark,
@@ -71,9 +74,8 @@ fun AlreadyLinkedScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Subtitle
         Text(
-            text = "This device is already linked to a parent account",
+            text = "This device is linked and monitoring is active.",
             fontSize = 14.sp,
             color = Color.Gray,
             textAlign = TextAlign.Center,
@@ -82,7 +84,6 @@ fun AlreadyLinkedScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Linked Details Card
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -100,63 +101,24 @@ fun AlreadyLinkedScreen(
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Parent Info
                 DetailRow(
                     icon = Icons.Filled.Person,
-                    label = "Parent/Guardian",
-                    value = parentName,
+                    label = "Status",
+                    value = "Fully Protected",
                     backgroundColor = Color.White
                 )
 
-                // Device Info
                 DetailRow(
                     icon = Icons.Filled.Devices,
                     label = "Device",
                     value = deviceName,
                     backgroundColor = Color.White
                 )
-
-                // Linked Date
-                DetailRow(
-                    icon = Icons.Filled.CheckCircle,
-                    label = "Linked Since",
-                    value = linkedDate,
-                    backgroundColor = Color.White
-                )
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(48.dp))
 
-        // Info Box
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color(0xFFFFF4E6)
-            )
-        ) {
-            Row(
-                modifier = Modifier.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "ℹ️",
-                    fontSize = 16.sp
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = "Your device is protected by parental controls",
-                    fontSize = 13.sp,
-                    color = GreenPrimaryDark,
-                    lineHeight = 18.sp
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        // Continue Button
         Button(
             onClick = onContinue,
             modifier = Modifier
@@ -172,12 +134,14 @@ fun AlreadyLinkedScreen(
             )
         ) {
             Text(
-                text = "Continue",
+                text = "Exit",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White
             )
         }
+        
+        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 

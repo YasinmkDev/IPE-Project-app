@@ -11,11 +11,10 @@ import com.example.myapp.ui.activities.BlockedAppActivity
 class MyAccessibilityService : AccessibilityService() {
 
     companion object {
-        private var blockedApps: Set<String> = emptySet()
+        private var blockedApps: List<String> = emptyList()
         private var blockedWebsites: List<String> = emptyList()
         private var storageRestricted: Boolean = false
-        // IMPORTANT: Default to FALSE so it doesn't block during setup!
-        private var protectionActive: Boolean = false
+        private var protectionActive: Boolean = true
 
         private val fileManagerPackages = setOf(
             "com.google.android.documentsui",
@@ -29,7 +28,7 @@ class MyAccessibilityService : AccessibilityService() {
         )
 
         fun setBlockedApps(apps: List<String>) {
-            blockedApps = apps.toSet()
+            blockedApps = apps
         }
 
         fun setBlockedWebsites(websites: List<String>) {
@@ -42,16 +41,16 @@ class MyAccessibilityService : AccessibilityService() {
         
         fun setProtectionActive(active: Boolean) {
             protectionActive = active
-            Log.d("AccessibilityService", "Protection status updated: $active")
         }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        // Only run blocking logic if protection is explicitly ON
         if (!protectionActive) return
 
         val packageName = event.packageName?.toString() ?: return
+        if (packageName == this.packageName) return
 
+        // App Blocking
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             if (blockedApps.contains(packageName)) {
                 blockApp(packageName)
@@ -64,11 +63,13 @@ class MyAccessibilityService : AccessibilityService() {
             }
         }
 
+        // Website Blocking
         val browsers = listOf("com.android.chrome", "org.mozilla.firefox", "com.microsoft.emmx")
         if (browsers.contains(packageName)) {
             checkBrowserUrl(rootInActiveWindow)
         }
 
+        // Settings Anti-Tamper
         if (packageName == "com.android.settings") {
             checkSettingsTampering(rootInActiveWindow)
         }
@@ -137,4 +138,9 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {}
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        Log.d("AccessibilityService", "Service Connected")
+    }
 }

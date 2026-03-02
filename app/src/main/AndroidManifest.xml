@@ -5,26 +5,18 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
-    <!-- Required for app usage tracking -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
-    <!-- Required for floating overlay -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- Required for internet access to Firebase -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Required for boot receiver -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Required to query all installed packages (Android 11+) -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     
-    <!-- Storage permissions for restriction enforcement -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
     
-    <!-- Device admin permissions for app control -->
     <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN" />
-    
-    <!-- Security and monitoring permissions -->
+
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
@@ -35,12 +27,10 @@
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.READ_PRIVILEGED_PHONE_STATE" tools:ignore="ProtectedPermissions" />
     
-    <!-- Foreground service permissions -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     
-    <!-- Android 12+ permissions for boot completion and background service -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <application
@@ -64,27 +54,26 @@
             </intent-filter>
         </activity>
 
-        <!-- Background Monitoring Service -->
         <service
             android:name=".services.MonitoringService"
             android:exported="false"
+            android:directBootAware="true"
+            android:stopWithTask="false"
             android:foregroundServiceType="dataSync" />
         
-        <!-- Storage Restriction Service -->
         <service
             android:name=".services.StorageRestrictionService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
         
-        <!-- Firebase Cloud Messaging Service -->
         <service
             android:name=".services.FirebaseService"
             android:exported="false" />
 
-        <!-- Accessibility Service -->
         <service
             android:name=".services.MyAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:directBootAware="true"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
@@ -94,17 +83,18 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- Boot Receiver to restart service on reboot -->
         <receiver
             android:name=".receivers.BootReceiver"
+            android:directBootAware="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.REBOOT" />
             </intent-filter>
         </receiver>
         
-        <!-- Package Change Receiver to monitor app installations/uninstallations -->
         <receiver
             android:name=".receivers.PackageChangeReceiver"
             android:exported="true">
@@ -116,7 +106,6 @@
             </intent-filter>
         </receiver>
         
-        <!-- Admin State Receiver for device admin policy changes -->
         <receiver
             android:name=".receivers.AdminStateReceiver"
             android:exported="true">
@@ -126,7 +115,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Device Admin Receiver for remote lock/wipe capabilities -->
         <receiver
             android:name=".receivers.DeviceAdminReceiver"
             android:exported="true"
@@ -139,7 +127,6 @@
                 android:resource="@xml/device_admin_receiver" />
         </receiver>
 
-        <!-- Blocked App Overlay Activity -->
         <activity
             android:name=".ui.activities.BlockedAppActivity"
             android:exported="false"
@@ -148,7 +135,6 @@
             android:taskAffinity=""
             android:launchMode="singleInstance" />
 
-        <!-- Controlled Browser Activity -->
         <activity
             android:name=".ui.activities.ControlledBrowserActivity"
             android:exported="true"

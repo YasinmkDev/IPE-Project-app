@@ -1,6 +1,7 @@
 package com.example.myapp.services
 
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.IgnoreExtraProperties
 import com.google.firebase.firestore.PropertyName
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
@@ -8,11 +9,14 @@ import com.google.firebase.ktx.Firebase
 object FirebaseService {
     private val db: FirebaseFirestore = Firebase.firestore
 
-    // Child profile data
+    @IgnoreExtraProperties
     data class ChildProfile(
         val childId: String = "",
         val parentId: String = "",
+        val name: String = "",
         val age: Int = 0,
+        val ageGroup: String = "",
+        val pairingCode: String = "",
         val blockedApps: List<String> = emptyList(),
         val blockedWebsites: List<String> = emptyList(),
         val allowedApps: List<String> = emptyList(),
@@ -20,10 +24,11 @@ object FirebaseService {
         val storageRestricted: Boolean = false,
         @get:PropertyName("protectionActive")
         @set:PropertyName("protectionActive")
-        var protectionActive: Boolean = true
+        var protectionActive: Boolean = true,
+        val linkedAt: Any? = null,
+        val createdAt: Any? = null
     )
 
-    // App info data
     data class AppInfo(
         val packageName: String = "",
         val name: String = "",
@@ -34,7 +39,14 @@ object FirebaseService {
         var isSystemApp: Boolean = false
     )
 
-    // Resolve pairing code to childId
+    // New Data Class for Screen Time Tracking
+    data class ScreenTimeData(
+        val packageName: String = "",
+        val appName: String = "",
+        val totalTimeVisible: Long = 0L, // in milliseconds
+        val lastUpdated: Long = System.currentTimeMillis()
+    )
+
     fun resolvePairingCode(pairingCode: String, onSuccess: (String, String) -> Unit, onFailure: (Exception) -> Unit) {
         db.collection("pairingCodes").document(pairingCode)
             .get()
@@ -45,7 +57,7 @@ object FirebaseService {
                     if (childId != null && parentId != null) {
                         onSuccess(childId, parentId)
                     } else {
-                        onFailure(Exception("Child ID or Parent ID not found for pairing code"))
+                        onFailure(Exception("Child ID or Parent ID not found"))
                     }
                 } else {
                     onFailure(Exception("Pairing code not found"))
@@ -54,111 +66,88 @@ object FirebaseService {
             .addOnFailureListener(onFailure)
     }
 
-    // Update linkedAt timestamp when device is linked
     fun markDeviceAsLinked(childId: String, parentId: String, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
         val childRef = db.collection("parents").document(parentId)
             .collection("children").document(childId)
         
         childRef.update("linkedAt", com.google.firebase.Timestamp.now(), "protectionActive", true)
-            .addOnSuccessListener {
-                onSuccess()
-            }
+            .addOnSuccessListener { onSuccess() }
             .addOnFailureListener(onFailure)
     }
 
-    // Upload child's installed apps to Firestore
     fun uploadInstalledApps(childId: String, apps: List<AppInfo>) {
-        // First, get parentId from childLinks
         db.collection("childLinks").document(childId)
             .get()
             .addOnSuccessListener { linkDoc ->
                 if (linkDoc.exists()) {
                     val parentId = linkDoc.getString("parentId")
                     if (parentId != null) {
-                        // Clear existing installed apps
-                        db.collection("parents").document(parentId)
-                            .collection("children").document(childId)
-                            .collection("installedApps")
-                            .get()
-                            .addOnSuccessListener { documents ->
-                                for (document in documents) {
-                                    document.reference.delete()
-                                }
-                            }
-                            .addOnCompleteListener {
-                                // Upload new apps
-                                apps.forEach { app ->
-                                    db.collection("parents").document(parentId)
-                                        .collection("children").document(childId)
-                                        .collection("installedApps")
-                                        .document(app.packageName)
-                                        .set(app)
-                                }
-                            }
+                        apps.forEach { app ->
+                            db.collection("parents").document(parentId)
+                                .collection("children").document(childId)
+                                .collection("installedApps")
+                                .document(app.packageName)
+                                .set(app)
+                        }
                     }
                 }
             }
-            .addOnFailureListener { exception ->
-                println("Error fetching parentId: ${exception.message}")
-            }
     }
 
-    // Fetch child profile from Firestore
-    fun fetchChildProfile(childId: String, onSuccess: (ChildProfile) -> Unit, onFailure: (Exception) -> Unit) {
-        // First, get parentId from childLinks
+    // New: Update Screen Time for a specific app
+    fun updateAppScreenTime(childId: String, data: ScreenTimeData) {
         db.collection("childLinks").document(childId)
             .get()
             .addOnSuccessListener { linkDoc ->
                 if (linkDoc.exists()) {
                     val parentId = linkDoc.getString("parentId")
                     if (parentId != null) {
-                        // Then, fetch child profile from parents/{parentId}/children/{childId}
+                        db.collection("parents").document(parentId)
+                            .collection("children").document(childId)
+                            .collection("screenTime")
+                            .document(data.packageName)
+                            .set(data)
+                    }
+                }
+            }
+    }
+
+    fun fetchChildProfile(childId: String, onSuccess: (ChildProfile) -> Unit, onFailure: (Exception) -> Unit) {
+        db.collection("childLinks").document(childId)
+            .get()
+            .addOnSuccessListener { linkDoc ->
+                if (linkDoc.exists()) {
+                    val parentId = linkDoc.getString("parentId")
+                    if (parentId != null) {
                         db.collection("parents").document(parentId)
                             .collection("children").document(childId)
                             .get()
                             .addOnSuccessListener { document ->
-                                if (document.exists()) {
-                                    val profile = document.toObject(ChildProfile::class.java)
-                                    profile?.let(onSuccess)
-                                } else {
-                                    onFailure(Exception("Child profile not found"))
-                                }
+                                val profile = document.toObject(ChildProfile::class.java)
+                                profile?.let(onSuccess) ?: onFailure(Exception("Profile null"))
                             }
                             .addOnFailureListener(onFailure)
                     }
-                } else {
-                    onFailure(Exception("Child link not found"))
                 }
             }
             .addOnFailureListener(onFailure)
     }
 
-    // Listener for real-time updates to child profile
     fun listenToChildProfileUpdates(childId: String, onUpdate: (ChildProfile) -> Unit, onError: (Exception) -> Unit) {
-        // First, get parentId from childLinks
         db.collection("childLinks").document(childId)
             .get()
             .addOnSuccessListener { linkDoc ->
                 if (linkDoc.exists()) {
                     val parentId = linkDoc.getString("parentId")
                     if (parentId != null) {
-                        // Then, listen to child profile updates from parents/{parentId}/children/{childId}
                         db.collection("parents").document(parentId)
                             .collection("children").document(childId)
-                            .addSnapshotListener { documentSnapshot, firebaseFirestoreException ->
-                                firebaseFirestoreException?.let(onError)
-                                documentSnapshot?.let {
-                                    if (it.exists()) {
-                                        val profile = it.toObject(ChildProfile::class.java)
-                                        profile?.let(onUpdate)
-                                    }
-                                }
+                            .addSnapshotListener { snapshot, e ->
+                                if (e != null) { onError(e); return@addSnapshotListener }
+                                snapshot?.toObject(ChildProfile::class.java)?.let(onUpdate)
                             }
                     }
-                } else {
-                    onError(Exception("Child link not found"))
                 }
             }
-            .addOnFailureListener(onError)
     }
 }

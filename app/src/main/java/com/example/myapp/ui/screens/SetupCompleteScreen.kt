@@ -101,7 +101,7 @@ fun SetupCompleteScreen(
 
         // Title
         Text(
-            text = "Setup Complete!",
+            text = "Protection Enabled!",
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = GreenPrimaryDark,
@@ -111,7 +111,7 @@ fun SetupCompleteScreen(
         Spacer(modifier = Modifier.height(10.dp))
 
         Text(
-            text = "Your device is now protected and ready for monitoring",
+            text = "Your device is now linked and all security policies are active",
             fontSize = 14.sp,
             color = Color.Gray,
             textAlign = TextAlign.Center,
@@ -120,27 +120,27 @@ fun SetupCompleteScreen(
 
         Spacer(modifier = Modifier.height(36.dp))
 
-        // Features List
+        // Features List - Updated to reflect actual functionality
         if (showFeatures) {
             Column(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 FeatureSummaryItem(
                     icon = Icons.Filled.Timer,
-                    title = "App Usage Monitoring",
-                    description = "Track time spent on apps and games"
+                    title = "App Usage Tracking",
+                    description = "Monitor time spent on each application"
                 )
 
                 FeatureSummaryItem(
-                    icon = Icons.Filled.LocationOn,
-                    title = "Location Tracking",
-                    description = "Know where your child is in real-time"
+                    icon = Icons.Filled.AppBlocking,
+                    title = "App & Website Blocking",
+                    description = "Instant restrictions for unsuitable content"
                 )
 
                 FeatureSummaryItem(
-                    icon = Icons.Filled.HourglassTop,
-                    title = "Screen Time Control",
-                    description = "Set daily limits and schedules"
+                    icon = Icons.Filled.Security,
+                    title = "Anti-Tamper Protection",
+                    description = "Prevents unauthorized uninstall or disabling"
                 )
             }
         }
@@ -169,7 +169,7 @@ fun SetupCompleteScreen(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "The app will now run silently in the background",
+                    text = "Screen time is calculated while apps are in the foreground",
                     fontSize = 13.sp,
                     color = GreenPrimaryDark,
                     modifier = Modifier.weight(1f)
@@ -195,7 +195,7 @@ fun SetupCompleteScreen(
             )
         ) {
             Text(
-                text = "Finish & Start Monitoring",
+                text = "Finish & Secure Device",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White
@@ -206,7 +206,7 @@ fun SetupCompleteScreen(
 
         // Secondary text
         Text(
-            text = "Tap to minimize and start protecting",
+            text = "Safe browsing and usage is now active",
             fontSize = 12.sp,
             color = Color.Gray,
             textAlign = TextAlign.Center
@@ -282,17 +282,5 @@ private fun FeatureSummaryItem(
 fun SetupCompleteScreenPreview() {
     IPETheme {
         SetupCompleteScreen(onFinish = {})
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun FeatureSummaryItemPreview() {
-    IPETheme {
-        FeatureSummaryItem(
-            icon = Icons.Filled.Timer,
-            title = "App Usage Monitoring",
-            description = "Track time spent on apps and games"
-        )
     }
 }

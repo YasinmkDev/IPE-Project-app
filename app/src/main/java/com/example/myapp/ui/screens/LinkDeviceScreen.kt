@@ -36,30 +36,44 @@ import com.example.myapp.ui.theme.GreenPrimaryDark
 import com.example.myapp.ui.theme.GreenPrimaryLight
 import com.example.myapp.ui.theme.GreenSurface
 import com.example.myapp.ui.theme.IPETheme
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun LinkDeviceScreen(
     navController: NavController,
-    onLinkDevice: (String) -> Unit,
+    onLinkDevice: (String, (Boolean) -> Unit) -> Unit,
     onScanQR: () -> Unit,
     onBack: () -> Unit
 ) {
     val scrollState = rememberScrollState()
     val focusManager = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
     var deviceCode by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     
-    // Get scanned QR code from navigation's SavedStateHandle
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     
-    // Use DisposableEffect or LaunchedEffect to observe the savedStateHandle
     LaunchedEffect(navBackStackEntry) {
         val savedStateHandle = navBackStackEntry?.savedStateHandle
         val scannedCode = savedStateHandle?.get<String>("scannedCode")
         if (!scannedCode.isNullOrEmpty()) {
             deviceCode = scannedCode
-            // Clear the code after consuming it
             savedStateHandle.remove<String>("scannedCode")
+        }
+    }
+
+    val handleLink = {
+        if (deviceCode.length == 6) {
+            isLoading = true
+            errorMessage = null
+            onLinkDevice(deviceCode) { success ->
+                isLoading = false
+                if (!success) {
+                    errorMessage = "Invalid or expired pairing code. Please try again."
+                }
+            }
         }
     }
 
@@ -137,7 +151,6 @@ fun LinkDeviceScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // Title
             Text(
                 text = "Connect to Parent",
                 fontSize = 22.sp,
@@ -148,7 +161,6 @@ fun LinkDeviceScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Subtitle
             Text(
                 text = "Enter the Parent Code from the parent's device to link this device",
                 fontSize = 14.sp,
@@ -160,15 +172,18 @@ fun LinkDeviceScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Pairing Code Input with better styling
             OutlinedTextField(
                 value = deviceCode,
                 onValueChange = { 
-                    if (it.length <= 6) deviceCode = it 
+                    if (it.length <= 6) {
+                        deviceCode = it
+                        if (errorMessage != null) errorMessage = null
+                    }
                 },
                 label = { Text("Pairing Code") },
                 placeholder = { Text("Enter 6-digit code") },
                 enabled = !isLoading,
+                isError = errorMessage != null,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(62.dp),
@@ -176,6 +191,7 @@ fun LinkDeviceScreen(
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = GreenPrimary,
                     unfocusedBorderColor = Color.LightGray,
+                    errorBorderColor = Color.Red,
                     focusedLabelColor = GreenPrimary,
                     cursorColor = GreenPrimary,
                     focusedContainerColor = GreenSurface.copy(alpha = 0.3f),
@@ -188,10 +204,7 @@ fun LinkDeviceScreen(
                 keyboardActions = KeyboardActions(
                     onDone = {
                         focusManager.clearFocus()
-                        if (deviceCode.length == 6) {
-                            isLoading = true
-                            onLinkDevice(deviceCode)
-                        }
+                        handleLink()
                     }
                 ),
                 singleLine = true,
@@ -202,14 +215,19 @@ fun LinkDeviceScreen(
                 )
             )
 
+            if (errorMessage != null) {
+                Text(
+                    text = errorMessage!!,
+                    color = Color.Red,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 8.dp, start = 4.dp).align(Alignment.Start)
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Link Button
             Button(
-                onClick = { 
-                    isLoading = true
-                    onLinkDevice(deviceCode) 
-                },
+                onClick = handleLink,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
@@ -242,7 +260,6 @@ fun LinkDeviceScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // Divider with OR
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -268,7 +285,6 @@ fun LinkDeviceScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // Scan QR Button
             OutlinedButton(
                 onClick = onScanQR,
                 modifier = Modifier
@@ -301,7 +317,6 @@ fun LinkDeviceScreen(
 
             Spacer(modifier = Modifier.height(40.dp))
 
-            // Help Text
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
@@ -322,18 +337,5 @@ fun LinkDeviceScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
         }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun LinkDeviceScreenPreview() {
-    IPETheme {
-        LinkDeviceScreen(
-            navController = rememberNavController(),
-            onLinkDevice = {},
-            onScanQR = {},
-            onBack = {}
-        )
     }
 }
