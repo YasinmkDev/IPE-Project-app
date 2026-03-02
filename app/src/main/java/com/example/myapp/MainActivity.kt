@@ -11,12 +11,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
 import com.example.myapp.services.FirebaseService
 import com.example.myapp.services.MonitoringService
 import com.example.myapp.services.FirebaseService.AppInfo
 import com.example.myapp.ui.navigation.IPENavGraph
+import com.example.myapp.ui.navigation.Screen
 import com.example.myapp.ui.theme.IPETheme
 
 class MainActivity : ComponentActivity() {
@@ -28,6 +30,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         sharedPreferences = getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
+        val storedChildId = sharedPreferences.getString("CHILD_ID", null)
 
         setContent {
             IPETheme {
@@ -47,10 +50,24 @@ class MainActivity : ComponentActivity() {
                             // Start monitoring service
                             startMonitoringService(childId)
 
-                            // Close UI
-                            finish()
+                            // Close UI or show a "Locked" state
+                            // For this app, we'll navigate to AlreadyLinked
+                            navController.navigate(Screen.AlreadyLinked.createRoute(childId)) {
+                                popUpTo(0)
+                            }
                         }
                     )
+                }
+
+                // If already linked, skip to the AlreadyLinked screen
+                LaunchedEffect(storedChildId) {
+                    if (storedChildId != null) {
+                        Log.d(TAG, "Device already linked with childId: $storedChildId")
+                        startMonitoringService(storedChildId)
+                        navController.navigate(Screen.AlreadyLinked.createRoute(storedChildId)) {
+                            popUpTo(Screen.Welcome.route) { inclusive = true }
+                        }
+                    }
                 }
             }
         }

@@ -61,12 +61,7 @@ class MonitoringService : Service() {
             FirebaseService.fetchChildProfile(
                 childId,
                 onSuccess = { profile ->
-                    blockedAppsList = profile.blockedApps
-                    blockedWebsitesList = profile.blockedWebsites
-                    childAge = profile.age
-                    screenTimeMinutes = ageGroupManager.getScreenTimeLimit(
-                        com.example.myapp.models.AgeGroup.fromAge(childAge)
-                    )
+                    updateMonitoringData(profile)
                     lastCheckTime = System.currentTimeMillis()
                     Log.d(TAG, "Fetched blocked apps: $blockedAppsList, screen time: $screenTimeMinutes min")
                     
@@ -82,12 +77,7 @@ class MonitoringService : Service() {
             FirebaseService.listenToChildProfileUpdates(
                 childId,
                 onUpdate = { profile ->
-                    blockedAppsList = profile.blockedApps
-                    blockedWebsitesList = profile.blockedWebsites
-                    childAge = profile.age
-                    screenTimeMinutes = ageGroupManager.getScreenTimeLimit(
-                        com.example.myapp.models.AgeGroup.fromAge(childAge)
-                    )
+                    updateMonitoringData(profile)
                     Log.d(TAG, "Updated blocked apps: $blockedAppsList")
                     applyAgeBasedRestrictions()
                 },
@@ -103,12 +93,24 @@ class MonitoringService : Service() {
         return START_STICKY
     }
 
+    private fun updateMonitoringData(profile: FirebaseService.ChildProfile) {
+        blockedAppsList = profile.blockedApps
+        blockedWebsitesList = profile.blockedWebsites
+        childAge = profile.age
+        screenTimeMinutes = ageGroupManager.getScreenTimeLimit(
+            com.example.myapp.models.AgeGroup.fromAge(childAge)
+        )
+        
+        // Update Accessibility Service with the new blocked list
+        MyAccessibilityService.setBlockedApps(blockedAppsList)
+    }
+
     private fun startMonitoring() {
         timer?.cancel()
         timer = Timer()
         timer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
-                checkCurrentApp()
+                // checkCurrentApp() // We now rely on MyAccessibilityService for app blocking
                 trackScreenTime()
                 
                 // Periodic security check every 30 seconds

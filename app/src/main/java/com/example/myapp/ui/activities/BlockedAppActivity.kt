@@ -4,8 +4,6 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
-import android.view.LayoutInflater
-import android.view.View
 import android.view.Window
 import android.view.WindowManager
 import android.widget.Button
@@ -17,49 +15,45 @@ class BlockedAppActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Remove title bar and make activity fullscreen
+        
+        // Ensure the activity shows over the lock screen and keeps screen on
         requestWindowFeature(Window.FEATURE_NO_TITLE)
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_FULLSCREEN,
-            WindowManager.LayoutParams.FLAG_FULLSCREEN
-        )
-        // Make activity overlay all other apps
-        window.addFlags(
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-        )
+        window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
 
-        // Create a simple layout programmatically
-        val layout = LayoutInflater.from(this).inflate(R.layout.activity_blocked_app, null)
-        setContentView(layout)
+        setContentView(R.layout.activity_blocked_app)
 
         blockedPackageName = intent.getStringExtra("BLOCKED_PACKAGE") ?: ""
-        Log.d(TAG, "Blocked app: $blockedPackageName")
+        Log.d(TAG, "Displaying block overlay for: $blockedPackageName")
 
-        // Display blocked app info
         val appName = getAppName(blockedPackageName)
         findViewById<TextView>(R.id.textBlockedAppName).text = appName
 
-        // Close button
         findViewById<Button>(R.id.buttonClose).setOnClickListener {
+            // Instead of just finishing, we can go to the home screen
+            val startMain = Intent(Intent.ACTION_MAIN)
+            startMain.addCategory(Intent.CATEGORY_HOME)
+            startMain.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            startActivity(startMain)
             finish()
         }
     }
 
     private fun getAppName(packageName: String): String {
         return try {
-            val packageManager = packageManager
-            val applicationInfo = packageManager.getApplicationInfo(packageName, 0)
-            packageManager.getApplicationLabel(applicationInfo).toString()
+            val pm = packageManager
+            val applicationInfo = pm.getApplicationInfo(packageName, 0)
+            pm.getApplicationLabel(applicationInfo).toString()
         } catch (e: Exception) {
             packageName
         }
     }
 
     override fun onBackPressed() {
-        // Do nothing to prevent closing via back button
+        // Prevent closing via back button
+        // Optional: Also redirect to home screen here
     }
 
     companion object {
