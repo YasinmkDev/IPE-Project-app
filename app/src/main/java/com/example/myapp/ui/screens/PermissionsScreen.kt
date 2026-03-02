@@ -15,6 +15,7 @@ import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -501,7 +502,9 @@ private fun PermissionCardWithAction(
 
             // Text Content
             Column(
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onRequestPermission() }
             ) {
                 Text(
                     text = permission.title,

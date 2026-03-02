@@ -190,18 +190,16 @@ private fun initializeCamera(
     setIsCameraInitializing(true)
     setCameraError(null)
     
-    val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+    try {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         
         cameraProviderFuture.addListener({
             try {
                 val cameraProvider = cameraProviderFuture.get()
                 
-                // Setup camera preview and image analysis
+                // Setup camera preview and image analysis without creating PreviewView here
                 val preview = CameraPreview.Builder()
                     .build()
-                    .also {
-                        it.setSurfaceProvider(PreviewView(context).surfaceProvider)
-                    }
                 
                 val imageAnalysis = ImageAnalysis.Builder()
                     .setTargetResolution(Size(1280, 720))
@@ -241,22 +239,38 @@ private fun initializeCamera(
                         }
                     }
 
-                // Bind camera use cases
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    lifecycleOwner,
-                    CameraSelector.DEFAULT_BACK_CAMERA,
-                    preview,
-                    imageAnalysis
-                )
-
-                setCameraProvider(cameraProvider)
-                setIsCameraInitializing(false)
+                // Bind camera use cases with null checks
+                try {
+                    cameraProvider.unbindAll()
+                } catch (e: Exception) {
+                    // Ignore unbind errors
+                }
+                
+                try {
+                    cameraProvider.bindToLifecycle(
+                        lifecycleOwner,
+                        CameraSelector.DEFAULT_BACK_CAMERA,
+                        preview,
+                        imageAnalysis
+                    )
+                    setCameraProvider(cameraProvider)
+                    setIsCameraInitializing(false)
+                } catch (e: IllegalStateException) {
+                    setCameraError("Camera binding failed: Lifecycle not ready. Please try again.")
+                    setIsCameraInitializing(false)
+                } catch (e: Exception) {
+                    setCameraError("Failed to bind camera: ${e.message}")
+                    setIsCameraInitializing(false)
+                }
             } catch (e: Exception) {
                 setCameraError("Failed to initialize camera: ${e.message}")
                 setIsCameraInitializing(false)
             }
         }, ContextCompat.getMainExecutor(context))
+    } catch (e: Exception) {
+        setCameraError("Camera provider error: ${e.message}")
+        setIsCameraInitializing(false)
+    }
 }
 
 private fun cleanupCamera(cameraProvider: ProcessCameraProvider) {
