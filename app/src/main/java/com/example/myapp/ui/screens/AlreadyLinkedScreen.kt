@@ -8,13 +8,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Devices
-import androidx.compose.material.icons.filled.Parent
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -101,7 +102,7 @@ fun AlreadyLinkedScreen(
             ) {
                 // Parent Info
                 DetailRow(
-                    icon = Icons.Filled.Parent,
+                    icon = Icons.Filled.Person,
                     label = "Parent/Guardian",
                     value = parentName,
                     backgroundColor = Color.White
@@ -182,7 +183,7 @@ fun AlreadyLinkedScreen(
 
 @Composable
 private fun DetailRow(
-    icon: androidx.compose.material.icons.Icons.Companion,
+    icon: ImageVector,
     label: String,
     value: String,
     backgroundColor: Color
@@ -196,7 +197,7 @@ private fun DetailRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = Icons.Filled.Parent,
+            imageVector = icon,
             contentDescription = label,
             tint = GreenPrimary,
             modifier = Modifier.size(20.dp)

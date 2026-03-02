@@ -10,9 +10,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -36,12 +39,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.example.myapp.receivers.DeviceAdminReceiver
 import com.example.myapp.ui.theme.GreenPrimary
 import com.example.myapp.ui.theme.GreenPrimaryDark
@@ -56,7 +62,6 @@ data class PermissionItem(
     val title: String,
     val description: String,
     var isEnabled: Boolean = false,
-    val action: (Context) -> Unit,
     val isSystemPermission: Boolean = false,
     val permissionType: String? = null
 )
@@ -81,11 +86,6 @@ fun PermissionsScreen(
                     title = "Camera",
                     description = "Scan QR codes and capture images",
                     isEnabled = false,
-                    action = { ctx ->
-                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                        intent.data = android.net.Uri.parse("package:" + ctx.packageName)
-                        ctx.startActivity(intent)
-                    },
                     isSystemPermission = true,
                     permissionType = Manifest.permission.CAMERA
                 ),
@@ -95,10 +95,6 @@ fun PermissionsScreen(
                     title = "Usage Access",
                     description = "Monitor app usage and screen time statistics",
                     isEnabled = false,
-                    action = { ctx ->
-                        val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                        ctx.startActivity(intent)
-                    },
                     isSystemPermission = true
                 ),
                 PermissionItem(
@@ -107,10 +103,6 @@ fun PermissionsScreen(
                     title = "Accessibility Service",
                     description = "Enable advanced monitoring and controls",
                     isEnabled = false,
-                    action = { ctx ->
-                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                        ctx.startActivity(intent)
-                    },
                     isSystemPermission = true
                 ),
                 PermissionItem(
@@ -119,19 +111,6 @@ fun PermissionsScreen(
                     title = "Display Over Other Apps",
                     description = "Show overlay for alerts and controls",
                     isEnabled = false,
-                    action = { ctx ->
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
-                            intent.data = android.net.Uri.parse("package:" + ctx.packageName)
-                            try {
-                                ctx.startActivity(intent)
-                            } catch (e: Exception) {
-                                val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                                fallback.data = android.net.Uri.parse("package:" + ctx.packageName)
-                                ctx.startActivity(fallback)
-                            }
-                        }
-                    },
                     isSystemPermission = true
                 ),
                 PermissionItem(
@@ -140,10 +119,6 @@ fun PermissionsScreen(
                     title = "Device Admin",
                     description = "Enable remote lock and wipe features",
                     isEnabled = false,
-                    action = { ctx ->
-                        val intent = Intent(Settings.ACTION_SECURITY_SETTINGS)
-                        ctx.startActivity(intent)
-                    },
                     isSystemPermission = true
                 )
             )
@@ -155,78 +130,120 @@ fun PermissionsScreen(
         val packageName = ctx.packageName
         
         return currentPermissions.map { permission ->
-            when (permission.id) {
+            val isGranted = when (permission.id) {
                 "camera" -> {
-                    val isGranted = ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) == 
+                    ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) == 
                                    PackageManager.PERMISSION_GRANTED
-                    permission.copy(isEnabled = isGranted)
                 }
                 "usage_access" -> {
                     val appOpsManager = ctx.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
-                    val mode = appOpsManager?.checkOpNoThrow(
-                        AppOpsManager.OPSTR_GET_USAGE_STATS,
-                        android.os.Process.myUid(),
-                        packageName
-                    ) ?: AppOpsManager.MODE_DEFAULT
-                    val isGranted = mode == AppOpsManager.MODE_ALLOWED
-                    permission.copy(isEnabled = isGranted)
+                    val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        appOpsManager?.unsafeCheckOpNoThrow(
+                            AppOpsManager.OPSTR_GET_USAGE_STATS,
+                            android.os.Process.myUid(),
+                            packageName
+                        ) ?: AppOpsManager.MODE_DEFAULT
+                    } else {
+                        @Suppress("DEPRECATION")
+                        appOpsManager?.checkOpNoThrow(
+                            AppOpsManager.OPSTR_GET_USAGE_STATS,
+                            android.os.Process.myUid(),
+                            packageName
+                        ) ?: AppOpsManager.MODE_DEFAULT
+                    }
+                    mode == AppOpsManager.MODE_ALLOWED
                 }
                 "accessibility" -> {
                     val accessibilityManager = ctx.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
-                    val isGranted = accessibilityManager?.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)?.any {
+                    accessibilityManager?.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)?.any {
                         it.id.contains(packageName)
                     } ?: false
-                    permission.copy(isEnabled = isGranted)
                 }
                 "overlay" -> {
-                    val isGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         Settings.canDrawOverlays(ctx)
                     } else {
                         true
                     }
-                    permission.copy(isEnabled = isGranted)
                 }
                 "device_admin" -> {
                     val devicePolicyManager = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
-                    val isAdminActive = devicePolicyManager?.isAdminActive(
+                    devicePolicyManager?.isAdminActive(
                         ComponentName(ctx, DeviceAdminReceiver::class.java)
                     ) ?: false
-                    permission.copy(isEnabled = isAdminActive)
                 }
-                else -> permission
+                else -> permission.isEnabled
+            }
+            permission.copy(isEnabled = isGranted)
+        }
+    }
+
+    // Launcher for runtime permissions
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        scope.launch {
+            permissions = checkPermissions(context, permissions)
+        }
+    }
+
+    // Launcher for settings activities
+    val settingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        scope.launch {
+            permissions = checkPermissions(context, permissions)
+        }
+    }
+
+    // Function to handle permission request
+    val requestPermission = { item: PermissionItem ->
+        when (item.id) {
+            "camera" -> {
+                permissionLauncher.launch(Manifest.permission.CAMERA)
+            }
+            "usage_access" -> {
+                settingsLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+            }
+            "accessibility" -> {
+                settingsLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+            "overlay" -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    }
+                    settingsLauncher.launch(intent)
+                }
+            }
+            "device_admin" -> {
+                val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                    putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, ComponentName(context, DeviceAdminReceiver::class.java))
+                    putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "This permission is required for device security features.")
+                }
+                settingsLauncher.launch(intent)
             }
         }
     }
 
-    // Check actual permissions on start
+    // Initial check
     LaunchedEffect(Unit) {
         permissions = checkPermissions(context, permissions)
     }
 
-    // Check permissions when returning from settings
-    DisposableEffect(Unit) {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
+    // Re-check when returning to app
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
                 scope.launch {
                     permissions = checkPermissions(context, permissions)
                 }
             }
         }
-        
-        val filter = IntentFilter("com.example.myapp.PERMISSION_CHECK")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            ContextCompat.registerReceiver(
-                context,
-                receiver,
-                filter,
-                ContextCompat.RECEIVER_NOT_EXPORTED
-            )
-        }
-        
+        lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
-            context.unregisterReceiver(receiver)
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -317,17 +334,19 @@ fun PermissionsScreen(
             }
 
             // Permissions Items
-            itemsIndexed(permissions) { index, permission ->
+            itemsIndexed(permissions) { _, permission ->
                 PermissionCardWithAction(
                     permission = permission,
-                    onToggle = { isEnabled ->
-                        permissions = permissions.toMutableList().apply {
-                            this[index] = this[index].copy(isEnabled = isEnabled)
+                    onToggle = { isChecked ->
+                        if (isChecked && !permission.isEnabled) {
+                            requestPermission(permission)
+                        } else if (!isChecked && permission.isEnabled) {
+                            // Optionally guide user to settings to disable
+                            requestPermission(permission)
                         }
                     },
                     onRequestPermission = {
-                        // Navigate to permission detail screen
-                        onPermissionDetail(permission.id)
+                        requestPermission(permission)
                     }
                 )
             }
@@ -367,17 +386,17 @@ fun PermissionsScreen(
                 .background(Color.White)
                 .padding(horizontal = 24.dp, vertical = 16.dp)
         ) {
-            // Continue Button - Check permissions and proceed
+            // Continue Button - Enabled only when all granted
             Button(
                 onClick = {
                     isLoading = true
                     scope.launch {
-                        // Recheck all permissions
                         permissions = checkPermissions(context, permissions)
-                        delay(1000)
+                        delay(500)
                         isLoading = false
-                        // Always allow to continue - user can grant permissions individually
-                        onGrantAll()
+                        if (permissions.all { it.isEnabled }) {
+                            onGrantAll()
+                        }
                     }
                 },
                 modifier = Modifier
@@ -391,7 +410,7 @@ fun PermissionsScreen(
                     defaultElevation = 3.dp,
                     pressedElevation = 6.dp
                 ),
-                enabled = !isLoading
+                enabled = !isLoading && allGranted
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(
@@ -464,7 +483,7 @@ private fun PermissionCardWithAction(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Icon with background - clickable to open settings
+            // Icon with background
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -472,20 +491,16 @@ private fun PermissionCardWithAction(
                     .background(
                         if (permission.isEnabled) GreenPrimary.copy(alpha = 0.15f)
                         else GreenSurface
-                    ),
+                    )
+                    .clickable { onRequestPermission() },
                 contentAlignment = Alignment.Center
             ) {
-                IconButton(
-                    onClick = onRequestPermission,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        imageVector = permission.icon,
-                        contentDescription = permission.title,
-                        tint = if (permission.isEnabled) GreenPrimary else GreenPrimary.copy(alpha = 0.7f),
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                Icon(
+                    imageVector = permission.icon,
+                    contentDescription = permission.title,
+                    tint = if (permission.isEnabled) GreenPrimary else GreenPrimary.copy(alpha = 0.7f),
+                    modifier = Modifier.size(24.dp)
+                )
             }
 
             Spacer(modifier = Modifier.width(14.dp))
@@ -512,7 +527,7 @@ private fun PermissionCardWithAction(
                 )
             }
 
-            // Toggle
+            // Toggle - reflects ACTUAL state
             Switch(
                 checked = permission.isEnabled,
                 onCheckedChange = onToggle,

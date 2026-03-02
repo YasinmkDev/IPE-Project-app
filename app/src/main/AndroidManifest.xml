@@ -82,6 +82,19 @@
             android:name=".services.FirebaseService"
             android:exported="false" />
 
+        <!-- Accessibility Service -->
+        <service
+            android:name=".services.MyAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
         <!-- Boot Receiver to restart service on reboot -->
         <receiver
             android:name=".receivers.BootReceiver"
