@@ -47,6 +47,7 @@ fun LinkDeviceScreen(
     val scrollState = rememberScrollState()
     val focusManager = LocalFocusManager.current
     var deviceCode by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
     
     // Get scanned QR code from navigation's SavedStateHandle
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -167,6 +168,7 @@ fun LinkDeviceScreen(
                 },
                 label = { Text("Pairing Code") },
                 placeholder = { Text("Enter 6-digit code") },
+                enabled = !isLoading,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(62.dp),
@@ -186,7 +188,10 @@ fun LinkDeviceScreen(
                 keyboardActions = KeyboardActions(
                     onDone = {
                         focusManager.clearFocus()
-                        if (deviceCode.length == 6) onLinkDevice(deviceCode)
+                        if (deviceCode.length == 6) {
+                            isLoading = true
+                            onLinkDevice(deviceCode)
+                        }
                     }
                 ),
                 singleLine = true,
@@ -201,7 +206,10 @@ fun LinkDeviceScreen(
 
             // Link Button
             Button(
-                onClick = { onLinkDevice(deviceCode) },
+                onClick = { 
+                    isLoading = true
+                    onLinkDevice(deviceCode) 
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
@@ -210,18 +218,26 @@ fun LinkDeviceScreen(
                     containerColor = GreenPrimary,
                     disabledContainerColor = GreenPrimary.copy(alpha = 0.4f)
                 ),
-                enabled = deviceCode.length == 6,
+                enabled = deviceCode.length == 6 && !isLoading,
                 elevation = ButtonDefaults.buttonElevation(
                     defaultElevation = 3.dp,
                     pressedElevation = 6.dp
                 )
             ) {
-                Text(
-                    text = "Link Device",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White
-                )
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        text = "Link Device",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(28.dp))
@@ -258,6 +274,7 @@ fun LinkDeviceScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
+                enabled = !isLoading,
                 shape = RoundedCornerShape(26.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = GreenPrimary

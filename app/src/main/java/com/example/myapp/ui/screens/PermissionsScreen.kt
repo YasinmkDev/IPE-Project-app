@@ -4,11 +4,9 @@ import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.AppOpsManager
 import android.app.admin.DevicePolicyManager
-import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -29,12 +27,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -81,27 +79,18 @@ fun PermissionsScreen(
         mutableStateOf(
             listOf(
                 PermissionItem(
-                    id = "camera",
-                    icon = Icons.Filled.QrCodeScanner,
-                    title = "Camera",
-                    description = "Scan QR codes and capture images",
+                    id = "device_admin",
+                    icon = Icons.Filled.Lock,
+                    title = "Device Admin",
+                    description = "Enable remote lock and wipe features (Required first)",
                     isEnabled = false,
-                    isSystemPermission = true,
-                    permissionType = Manifest.permission.CAMERA
+                    isSystemPermission = true
                 ),
                 PermissionItem(
                     id = "usage_access",
                     icon = Icons.Filled.Accessibility,
                     title = "Usage Access",
                     description = "Monitor app usage and screen time statistics",
-                    isEnabled = false,
-                    isSystemPermission = true
-                ),
-                PermissionItem(
-                    id = "accessibility",
-                    icon = Icons.Filled.Security,
-                    title = "Accessibility Service",
-                    description = "Enable advanced monitoring and controls",
                     isEnabled = false,
                     isSystemPermission = true
                 ),
@@ -114,10 +103,10 @@ fun PermissionsScreen(
                     isSystemPermission = true
                 ),
                 PermissionItem(
-                    id = "device_admin",
-                    icon = Icons.Filled.Lock,
-                    title = "Device Admin",
-                    description = "Enable remote lock and wipe features",
+                    id = "accessibility",
+                    icon = Icons.Filled.Security,
+                    title = "Accessibility Service",
+                    description = "Enable advanced monitoring and controls",
                     isEnabled = false,
                     isSystemPermission = true
                 )
@@ -125,16 +114,11 @@ fun PermissionsScreen(
         )
     }
 
-    // Function to check actual permissions
     suspend fun checkPermissions(ctx: Context, currentPermissions: List<PermissionItem>): List<PermissionItem> {
         val packageName = ctx.packageName
         
         return currentPermissions.map { permission ->
             val isGranted = when (permission.id) {
-                "camera" -> {
-                    ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) == 
-                                   PackageManager.PERMISSION_GRANTED
-                }
                 "usage_access" -> {
                     val appOpsManager = ctx.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
                     val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -178,16 +162,6 @@ fun PermissionsScreen(
         }
     }
 
-    // Launcher for runtime permissions
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { _ ->
-        scope.launch {
-            permissions = checkPermissions(context, permissions)
-        }
-    }
-
-    // Launcher for settings activities
     val settingsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { _ ->
@@ -196,12 +170,8 @@ fun PermissionsScreen(
         }
     }
 
-    // Function to handle permission request
     val requestPermission = { item: PermissionItem ->
         when (item.id) {
-            "camera" -> {
-                permissionLauncher.launch(Manifest.permission.CAMERA)
-            }
             "usage_access" -> {
                 settingsLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             }
@@ -226,12 +196,10 @@ fun PermissionsScreen(
         }
     }
 
-    // Initial check
     LaunchedEffect(Unit) {
         permissions = checkPermissions(context, permissions)
     }
 
-    // Re-check when returning to app
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -248,13 +216,13 @@ fun PermissionsScreen(
     }
 
     val allGranted = permissions.all { it.isEnabled }
+    val isAdminEnabled = permissions.find { it.id == "device_admin" }?.isEnabled ?: false
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
     ) {
-        // Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -284,15 +252,12 @@ fun PermissionsScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
             contentPadding = PaddingValues(vertical = 16.dp)
         ) {
-            // Icon and Title Section
             item {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Spacer(modifier = Modifier.height(8.dp))
-
-                    // Icon
                     Box(
                         modifier = Modifier
                             .size(80.dp)
@@ -307,10 +272,7 @@ fun PermissionsScreen(
                             modifier = Modifier.size(38.dp)
                         )
                     }
-
                     Spacer(modifier = Modifier.height(20.dp))
-
-                    // Title
                     Text(
                         text = "Enable Permissions",
                         fontSize = 22.sp,
@@ -318,14 +280,13 @@ fun PermissionsScreen(
                         color = GreenPrimaryDark,
                         textAlign = TextAlign.Center
                     )
-
                     Spacer(modifier = Modifier.height(8.dp))
-
-                    // Subtitle
                     Text(
-                        text = "These permissions are required for the app to function properly",
+                        text = if (!isAdminEnabled) "Please enable Device Admin FIRST." 
+                               else "Device Admin enabled. You can now enable other permissions.",
                         fontSize = 14.sp,
-                        color = Color.Gray,
+                        color = if (!isAdminEnabled) Color.Red else GreenPrimary,
+                        fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 16.dp),
                         lineHeight = 20.sp
@@ -333,60 +294,34 @@ fun PermissionsScreen(
                 }
             }
 
-            // Permissions Items
             itemsIndexed(permissions) { _, permission ->
+                val isClickable = permission.id == "device_admin" || isAdminEnabled
+                
                 PermissionCardWithAction(
                     permission = permission,
+                    isLocked = !isClickable,
                     onToggle = { isChecked ->
-                        if (isChecked && !permission.isEnabled) {
-                            requestPermission(permission)
-                        } else if (!isChecked && permission.isEnabled) {
-                            // Optionally guide user to settings to disable
-                            requestPermission(permission)
+                        if (isClickable) {
+                            if (isChecked && !permission.isEnabled) {
+                                requestPermission(permission)
+                            } else if (!isChecked && permission.isEnabled) {
+                                requestPermission(permission)
+                            }
                         }
                     },
                     onRequestPermission = {
-                        requestPermission(permission)
+                        if (isClickable) requestPermission(permission)
                     }
                 )
             }
-
-            // Info section at bottom
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = GreenSurface
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "ℹ️",
-                            fontSize = 16.sp
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Your data stays private and secure",
-                            fontSize = 13.sp,
-                            color = GreenPrimaryDark
-                        )
-                    }
-                }
-            }
         }
 
-        // Bottom Buttons
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color.White)
                 .padding(horizontal = 24.dp, vertical = 16.dp)
         ) {
-            // Continue Button - Enabled only when all granted
             Button(
                 onClick = {
                     isLoading = true
@@ -405,10 +340,6 @@ fun PermissionsScreen(
                 shape = RoundedCornerShape(26.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = GreenPrimary
-                ),
-                elevation = ButtonDefaults.buttonElevation(
-                    defaultElevation = 3.dp,
-                    pressedElevation = 6.dp
                 ),
                 enabled = !isLoading && allGranted
             ) {
@@ -433,10 +364,7 @@ fun PermissionsScreen(
                     )
                 }
             }
-
             Spacer(modifier = Modifier.height(12.dp))
-
-            // Skip Button
             TextButton(
                 onClick = onSkip,
                 modifier = Modifier
@@ -457,24 +385,26 @@ fun PermissionsScreen(
 @Composable
 private fun PermissionCardWithAction(
     permission: PermissionItem,
+    isLocked: Boolean,
     onToggle: (Boolean) -> Unit,
     onRequestPermission: () -> Unit
 ) {
     val cardColor by animateColorAsState(
-        targetValue = if (permission.isEnabled) GreenSurface else Color.White,
+        targetValue = if (permission.isEnabled) GreenSurface else if (isLocked) Color(0xFFF5F5F5) else Color.White,
         label = "cardColor"
     )
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(90.dp),
+            .height(90.dp)
+            .alpha(if (isLocked) 0.6f else 1.0f),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = cardColor
         ),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = if (permission.isEnabled) 0.dp else 2.dp
+            defaultElevation = if (permission.isEnabled || isLocked) 0.dp else 2.dp
         )
     ) {
         Row(
@@ -483,7 +413,6 @@ private fun PermissionCardWithAction(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Icon with background
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -492,30 +421,27 @@ private fun PermissionCardWithAction(
                         if (permission.isEnabled) GreenPrimary.copy(alpha = 0.15f)
                         else GreenSurface
                     )
-                    .clickable { onRequestPermission() },
+                    .clickable(enabled = !isLocked) { onRequestPermission() },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = permission.icon,
                     contentDescription = permission.title,
-                    tint = if (permission.isEnabled) GreenPrimary else GreenPrimary.copy(alpha = 0.7f),
+                    tint = if (permission.isEnabled) GreenPrimary else if (isLocked) Color.Gray else GreenPrimary.copy(alpha = 0.7f),
                     modifier = Modifier.size(24.dp)
                 )
             }
-
             Spacer(modifier = Modifier.width(14.dp))
-
-            // Text Content
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .clickable { onRequestPermission() }
+                    .clickable(enabled = !isLocked) { onRequestPermission() }
             ) {
                 Text(
                     text = permission.title,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = GreenPrimaryDark
+                    color = if (isLocked) Color.Gray else GreenPrimaryDark
                 )
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
@@ -526,11 +452,10 @@ private fun PermissionCardWithAction(
                     lineHeight = 16.sp
                 )
             }
-
-            // Toggle - reflects ACTUAL state
             Switch(
                 checked = permission.isEnabled,
                 onCheckedChange = onToggle,
+                enabled = !isLocked,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
                     checkedTrackColor = GreenPrimary,
@@ -539,13 +464,5 @@ private fun PermissionCardWithAction(
                 )
             )
         }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun PermissionsScreenPreview() {
-    IPETheme {
-        PermissionsScreen(onGrantAll = {}, onSkip = {}, onBack = {})
     }
 }

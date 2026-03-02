@@ -42,7 +42,6 @@
     
     <!-- Android 12+ permissions for boot completion and background service -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:allowBackup="true"

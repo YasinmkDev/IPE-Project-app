@@ -1,6 +1,7 @@
 package com.example.myapp.services
 
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.PropertyName
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 
@@ -16,7 +17,10 @@ object FirebaseService {
         val blockedWebsites: List<String> = emptyList(),
         val allowedApps: List<String> = emptyList(),
         val allowedWebsites: List<String> = emptyList(),
-        val storageRestricted: Boolean = false
+        val storageRestricted: Boolean = false,
+        @get:PropertyName("protectionActive")
+        @set:PropertyName("protectionActive")
+        var protectionActive: Boolean = true
     )
 
     // App info data
@@ -25,7 +29,9 @@ object FirebaseService {
         val name: String = "",
         val versionName: String = "",
         val versionCode: Long = 0L,
-        val isSystemApp: Boolean = false
+        @get:PropertyName("isSystemApp")
+        @set:PropertyName("isSystemApp")
+        var isSystemApp: Boolean = false
     )
 
     // Resolve pairing code to childId
@@ -53,7 +59,7 @@ object FirebaseService {
         val childRef = db.collection("parents").document(parentId)
             .collection("children").document(childId)
         
-        childRef.update("linkedAt", com.google.firebase.Timestamp.now())
+        childRef.update("linkedAt", com.google.firebase.Timestamp.now(), "protectionActive", true)
             .addOnSuccessListener {
                 onSuccess()
             }

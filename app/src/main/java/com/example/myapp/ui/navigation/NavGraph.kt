@@ -45,7 +45,6 @@ fun IPENavGraph(
             ) + fadeOut(animationSpec = tween(300))
         }
     ) {
-        // Screen 1: Welcome
         composable(route = Screen.Welcome.route) {
             WelcomeScreen(
                 onGetStarted = {
@@ -54,27 +53,16 @@ fun IPENavGraph(
             )
         }
 
-        // Screen 2: Link Device
         composable(route = Screen.LinkDevice.route) {
             LinkDeviceScreen(
                 navController = navController,
                 onLinkDevice = { pairingCode ->
-                    // Resolve pairing code to childId
                     FirebaseService.resolvePairingCode(
                         pairingCode,
                         onSuccess = { childId, parentId ->
-                            // Mark device as linked by updating linkedAt timestamp
-                            FirebaseService.markDeviceAsLinked(
-                                childId,
-                                parentId,
-                                onSuccess = {
-                                    // Navigate to Permissions with childId parameter
-                                    navController.navigate(Screen.Permissions.createRoute(childId))
-                                },
-                                onFailure = { exception ->
-                                    println("Error marking device as linked: ${exception.message}")
-                                }
-                            )
+                            // DO NOT call markDeviceAsLinked yet.
+                            // Just navigate to permissions.
+                            navController.navigate(Screen.Permissions.createRoute(childId, parentId))
                         },
                         onFailure = { exception ->
                             println("Error resolving pairing code: ${exception.message}")
@@ -90,7 +78,6 @@ fun IPENavGraph(
             )
         }
 
-        // Screen 3: QR Scanner
         composable(route = Screen.QRScanner.route) { backStackEntry ->
             val parentEntry = remember(backStackEntry) {
                 navController.getBackStackEntry(Screen.LinkDevice.route)
@@ -108,62 +95,53 @@ fun IPENavGraph(
             )
         }
 
-        // Screen 4: Permissions
         composable(
-            route = Screen.Permissions("").route,
+            route = "permissions/{childId}/{parentId}",
             arguments = listOf(
-                navArgument("childId") { type = NavType.StringType }
+                navArgument("childId") { type = NavType.StringType },
+                navArgument("parentId") { type = NavType.StringType }
             )
         ) { backStackEntry ->
             val childId = backStackEntry.arguments?.getString("childId") ?: ""
+            val parentId = backStackEntry.arguments?.getString("parentId") ?: ""
             
             PermissionsScreen(
                 onGrantAll = {
-                    navController.navigate(Screen.SetupComplete.createRoute(childId)) {
-                        popUpTo(Screen.Welcome.route) {
-                            inclusive = false
-                        }
+                    navController.navigate(Screen.SetupComplete.createRoute(childId, parentId)) {
+                        popUpTo(Screen.Welcome.route) { inclusive = false }
                     }
                 },
                 onSkip = {
-                    navController.navigate(Screen.SetupComplete.createRoute(childId)) {
-                        popUpTo(Screen.Welcome.route) {
-                            inclusive = false
-                        }
+                    navController.navigate(Screen.SetupComplete.createRoute(childId, parentId)) {
+                        popUpTo(Screen.Welcome.route) { inclusive = false }
                     }
                 },
-                onBack = {
-                    navController.popBackStack()
-                },
+                onBack = { navController.popBackStack() },
                 onPermissionDetail = { permissionId ->
-                    navController.navigate(Screen.PermissionDetail.createRoute(childId, permissionId))
+                    navController.navigate(Screen.PermissionDetail.createRoute(childId, parentId, permissionId))
                 }
             )
         }
 
-        // Screen 4.5: Permission Detail
         composable(
-            route = Screen.PermissionDetail("", "").route,
+            route = "permission_detail/{childId}/{parentId}/{permissionId}",
             arguments = listOf(
                 navArgument("childId") { type = NavType.StringType },
+                navArgument("parentId") { type = NavType.StringType },
                 navArgument("permissionId") { type = NavType.StringType }
             )
         ) { backStackEntry ->
             val childId = backStackEntry.arguments?.getString("childId") ?: ""
+            val parentId = backStackEntry.arguments?.getString("parentId") ?: ""
             val permissionId = backStackEntry.arguments?.getString("permissionId") ?: ""
 
             PermissionDetailScreen(
                 permissionId = permissionId,
-                onBack = {
-                    navController.popBackStack()
-                },
-                onPermissionGranted = {
-                    navController.popBackStack()
-                }
+                onBack = { navController.popBackStack() },
+                onPermissionGranted = { navController.popBackStack() }
             )
         }
 
-        // Screen 4.7: Already Linked
         composable(
             route = Screen.AlreadyLinked("").route,
             arguments = listOf(
@@ -171,30 +149,34 @@ fun IPENavGraph(
             )
         ) { backStackEntry ->
             val childId = backStackEntry.arguments?.getString("childId") ?: ""
-
             AlreadyLinkedScreen(
                 onContinue = {
-                    navController.navigate(Screen.SetupComplete.createRoute(childId)) {
-                        popUpTo(Screen.Welcome.route) {
-                            inclusive = false
-                        }
-                    }
+                    onSetupComplete(childId)
                 }
             )
         }
 
-        // Screen 5: Setup Complete
         composable(
-            route = Screen.SetupComplete("").route,
+            route = "setup_complete/{childId}/{parentId}",
             arguments = listOf(
-                navArgument("childId") { type = NavType.StringType }
+                navArgument("childId") { type = NavType.StringType },
+                navArgument("parentId") { type = NavType.StringType }
             )
         ) { backStackEntry ->
             val childId = backStackEntry.arguments?.getString("childId") ?: ""
+            val parentId = backStackEntry.arguments?.getString("parentId") ?: ""
 
             SetupCompleteScreen(
                 onFinish = {
-                    onSetupComplete(childId)
+                    // ONLY MARK AS LINKED NOW!
+                    FirebaseService.markDeviceAsLinked(
+                        childId,
+                        parentId,
+                        onSuccess = {
+                            onSetupComplete(childId)
+                        },
+                        onFailure = { onSetupComplete(childId) }
+                    )
                 }
             )
         }
