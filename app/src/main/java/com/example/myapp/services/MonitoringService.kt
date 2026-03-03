@@ -19,6 +19,7 @@ import com.example.myapp.R
 import com.example.myapp.ui.activities.BlockedAppActivity
 import com.example.myapp.MainActivity
 import com.example.myapp.models.AgeGroupManager
+import com.example.myapp.utils.ProtectedStorageUtil
 import java.util.Timer
 import java.util.TimerTask
 
@@ -48,7 +49,7 @@ class MonitoringService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val childId = intent?.getStringExtra("CHILD_ID") ?: getStoredChildId()
+        val childId = intent?.getStringExtra("CHILD_ID") ?: ProtectedStorageUtil.getStoredChildId(this)
         currentChildId = childId
         
         Log.d(TAG, "Service onStartCommand with childId: $currentChildId")
@@ -76,14 +77,6 @@ class MonitoringService : Service() {
         }
 
         return START_STICKY
-    }
-
-    private fun getStoredChildId(): String? {
-        val protectedContext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            createDeviceProtectedStorageContext()
-        } else this
-        return protectedContext.getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
-            .getString("CHILD_ID", null)
     }
 
     private fun updateMonitoringData(profile: FirebaseService.ChildProfile) {

@@ -2,12 +2,11 @@ package com.example.myapp.services
 
 import android.app.Service
 import android.content.Intent
-import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Environment
 import android.os.FileObserver
 import android.util.Log
+import com.example.myapp.models.AgeGroupStorageConfig
 import java.io.File
 
 class StorageRestrictionService : Service() {
@@ -80,24 +79,14 @@ class StorageRestrictionService : Service() {
      * Check if app has storage permission
      */
     fun canAccessStorage(childAgeGroup: String): Boolean {
-        return when (childAgeGroup) {
-            "TODDLER", "CHILD" -> false
-            "TEEN" -> true
-            "ADULT" -> true
-            else -> false
-        }
+        return AgeGroupStorageConfig.canAccessStorage(childAgeGroup)
     }
 
     /**
      * Check if storage access should be restricted
      */
     fun isStorageRestricted(childAgeGroup: String): Boolean {
-        return when (childAgeGroup) {
-            "TODDLER", "CHILD" -> true
-            "TEEN" -> false
-            "ADULT" -> false
-            else -> true
-        }
+        return AgeGroupStorageConfig.isStorageRestricted(childAgeGroup)
     }
 
     /**
@@ -143,22 +132,7 @@ class StorageRestrictionService : Service() {
      * Get list of restricted directories for age group
      */
     fun getRestrictedDirectories(ageGroup: String): List<String> {
-        return when (ageGroup) {
-            "TODDLER" -> listOf(
-                Environment.DIRECTORY_DOWNLOADS,
-                Environment.DIRECTORY_DOCUMENTS,
-                Environment.DIRECTORY_PICTURES,
-                Environment.DIRECTORY_MOVIES
-            )
-            "CHILD" -> listOf(
-                Environment.DIRECTORY_DOWNLOADS,
-                Environment.DIRECTORY_DOCUMENTS
-            )
-            "TEEN" -> listOf(
-                Environment.DIRECTORY_DOWNLOADS
-            )
-            else -> emptyList()
-        }
+        return AgeGroupStorageConfig.getRestrictedDirectories(ageGroup)
     }
 
     /**

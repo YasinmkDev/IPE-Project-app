@@ -1,8 +1,6 @@
 package com.example.myapp.ui.screens
 
 import android.Manifest
-import android.accessibilityservice.AccessibilityServiceInfo
-import android.app.AppOpsManager
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
@@ -11,7 +9,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import android.view.accessibility.AccessibilityManager
+import com.example.myapp.receivers.DeviceAdminReceiver
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -41,17 +39,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.example.myapp.receivers.DeviceAdminReceiver
 import com.example.myapp.ui.theme.GreenPrimary
 import com.example.myapp.ui.theme.GreenPrimaryDark
 import com.example.myapp.ui.theme.GreenSurface
-import com.example.myapp.ui.theme.IPETheme
+import com.example.myapp.utils.PermissionChecker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -125,36 +120,13 @@ fun PermissionsScreen(
     }
 
     suspend fun checkPermissions(ctx: Context, currentPermissions: List<PermissionItem>): List<PermissionItem> {
-        val packageName = ctx.packageName
-        
         return currentPermissions.map { permission ->
             val isGranted = when (permission.id) {
-                "notifications" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-                    } else true
-                }
-                "usage_access" -> {
-                    val appOpsManager = ctx.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
-                    val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        appOpsManager?.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName) ?: AppOpsManager.MODE_DEFAULT
-                    } else {
-                        @Suppress("DEPRECATION")
-                        appOpsManager?.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName) ?: AppOpsManager.MODE_DEFAULT
-                    }
-                    mode == AppOpsManager.MODE_ALLOWED
-                }
-                "accessibility" -> {
-                    val accessibilityManager = ctx.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
-                    accessibilityManager?.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)?.any {
-                        it.id.contains(packageName)
-                    } ?: false
-                }
-                "overlay" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Settings.canDrawOverlays(ctx) else true
-                "device_admin" -> {
-                    val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
-                    dpm?.isAdminActive(ComponentName(ctx, DeviceAdminReceiver::class.java)) ?: false
-                }
+                "notifications" -> PermissionChecker.checkNotificationPermission(ctx)
+                "usage_access" -> PermissionChecker.checkUsageAccessPermission(ctx)
+                "accessibility" -> PermissionChecker.checkAccessibilityPermission(ctx)
+                "overlay" -> PermissionChecker.checkOverlayPermission(ctx)
+                "device_admin" -> PermissionChecker.checkDeviceAdminPermission(ctx)
                 else -> permission.isEnabled
             }
             permission.copy(isEnabled = isGranted)
@@ -171,14 +143,22 @@ fun PermissionsScreen(
 
     val requestPermission = { item: PermissionItem ->
         when (item.id) {
-            "notifications" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            "notifications" -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
             "usage_access" -> settingsLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             "accessibility" -> settingsLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            "overlay" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) settingsLauncher.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
-            "device_admin" -> settingsLauncher.launch(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, ComponentName(context, DeviceAdminReceiver::class.java))
-                putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Required for protection.")
-            })
+            "overlay" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                settingsLauncher.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
+            }
+            "device_admin" -> {
+                settingsLauncher.launch(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                    putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, ComponentName(context, DeviceAdminReceiver::class.java))
+                    putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Required for protection.")
+                })
+            }
         }
     }
 

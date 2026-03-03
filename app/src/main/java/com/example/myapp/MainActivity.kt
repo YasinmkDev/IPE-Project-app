@@ -1,8 +1,6 @@
 package com.example.myapp
 
-import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -22,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,6 +33,7 @@ import com.example.myapp.ui.navigation.Screen
 import com.example.myapp.ui.theme.GreenPrimary
 import com.example.myapp.ui.theme.GreenPrimaryDark
 import com.example.myapp.ui.theme.IPETheme
+import com.example.myapp.utils.ProtectedStorageUtil
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
 
                 LaunchedEffect(Unit) {
-                    val childId = getStoredChildId()
+                    val childId = ProtectedStorageUtil.getStoredChildId(this@MainActivity)
                     storedChildId.value = childId
                     
                     if (childId != null) {
@@ -76,9 +76,9 @@ class MainActivity : ComponentActivity() {
                             navController = navController,
                             startDestination = startDest,
                             onSetupComplete = { childId ->
-                                saveChildId(childId)
+                                ProtectedStorageUtil.saveChildId(this@MainActivity, childId)
                                 uploadInstalledApps(childId)
-                                requestBatteryExemption() // NEW: Ask to ignore battery limits
+                                requestBatteryExemption()
                                 startMonitoringService(childId)
                                 navController.navigate(Screen.AlreadyLinked.createRoute(childId)) {
                                     popUpTo(0)
@@ -108,24 +108,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    private fun getStoredChildId(): String? {
-        val protectedContext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            createDeviceProtectedStorageContext()
-        } else this
-        val prefs = protectedContext.getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
-        return prefs.getString("CHILD_ID", null)
-    }
-
-    private fun saveChildId(childId: String) {
-        val protectedContext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            createDeviceProtectedStorageContext()
-        } else this
-        protectedContext.getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
-            .edit().putString("CHILD_ID", childId).apply()
-        getSharedPreferences("APP_PREFS", Context.MODE_PRIVATE)
-            .edit().putString("CHILD_ID", childId).apply()
     }
 
     @Composable
