@@ -8,6 +8,7 @@ import com.google.firebase.ktx.Firebase
 
 object FirebaseService {
     private val db: FirebaseFirestore = Firebase.firestore
+    private val parentIdCache = mutableMapOf<String, String>()
 
     @IgnoreExtraProperties
     data class ChildProfile(
@@ -16,12 +17,25 @@ object FirebaseService {
         val name: String = "",
         val age: Int = 0,
         val ageGroup: String = "",
+        val birthDate: Long = 0L,
+        val ageDetectionConfidence: Double = 0.0,
+        val ageDetectionSource: String = "",
+        val ageDetectionUpdatedAt: Long = 0L,
+        val screenshotRequestAt: Long = 0L,
+        val screenshotRequestBy: String = "",
+        val screenshotRequestStatus: String = "",
         val pairingCode: String = "",
         val blockedApps: List<String> = emptyList(),
         val blockedWebsites: List<String> = emptyList(),
+        val blockedDomains: List<String> = emptyList(),
+        val allowedDomains: List<String> = emptyList(),
         val allowedApps: List<String> = emptyList(),
         val allowedWebsites: List<String> = emptyList(),
         val storageRestricted: Boolean = false,
+        val dnsFilterEnabled: Boolean = false,
+        val uninstallModeEnabled: Boolean = false,
+        val uninstallWindowEndsAt: Long = 0L,
+        val uninstallApprovedBy: String = "",
         @get:PropertyName("protectionActive")
         @set:PropertyName("protectionActive")
         var protectionActive: Boolean = true,
@@ -45,6 +59,28 @@ object FirebaseService {
         val appName: String = "",
         val totalTimeVisible: Long = 0L, // in milliseconds
         val lastUpdated: Long = System.currentTimeMillis()
+    )
+
+    data class ChildEvent(
+        val type: String = "",
+        val severity: String = "low",
+        val details: Map<String, String> = emptyMap(),
+        val timestamp: Long = System.currentTimeMillis()
+    )
+
+    data class ActivitySnapshot(
+        val packageName: String = "",
+        val appName: String = "",
+        val timestamp: Long = System.currentTimeMillis(),
+        val source: String = "foreground_tracker"
+    )
+
+    data class RemoteScreenshot(
+        val imageBase64: String = "",
+        val mimeType: String = "image/jpeg",
+        val capturedAt: Long = System.currentTimeMillis(),
+        val requestedBy: String = "",
+        val requestAt: Long = 0L
     )
 
     fun resolvePairingCode(pairingCode: String, onSuccess: (String, String) -> Unit, onFailure: (Exception) -> Unit) {
@@ -96,20 +132,81 @@ object FirebaseService {
 
     // New: Update Screen Time for a specific app
     fun updateAppScreenTime(childId: String, data: ScreenTimeData) {
-        db.collection("childLinks").document(childId)
-            .get()
-            .addOnSuccessListener { linkDoc ->
-                if (linkDoc.exists()) {
-                    val parentId = linkDoc.getString("parentId")
-                    if (parentId != null) {
-                        db.collection("parents").document(parentId)
-                            .collection("children").document(childId)
-                            .collection("screenTime")
-                            .document(data.packageName)
-                            .set(data)
-                    }
-                }
-            }
+        resolveParentId(childId) { parentId ->
+            db.collection("parents").document(parentId)
+                .collection("children").document(childId)
+                .collection("screenTime")
+                .document(data.packageName)
+                .set(data)
+        }
+    }
+
+    fun logChildEvent(childId: String, event: ChildEvent) {
+        resolveParentId(childId) { parentId ->
+            db.collection("parents").document(parentId)
+                .collection("children").document(childId)
+                .collection("events")
+                .add(event)
+        }
+    }
+
+    fun logActivitySnapshot(childId: String, snapshot: ActivitySnapshot) {
+        resolveParentId(childId) { parentId ->
+            db.collection("parents").document(parentId)
+                .collection("children").document(childId)
+                .collection("activitySnapshots")
+                .add(snapshot)
+        }
+    }
+
+    fun logRemoteScreenshot(childId: String, screenshot: RemoteScreenshot) {
+        resolveParentId(childId) { parentId ->
+            db.collection("parents").document(parentId)
+                .collection("children").document(childId)
+                .collection("remoteScreenshots")
+                .add(screenshot)
+        }
+    }
+
+    fun updateScreenshotRequestStatus(
+        childId: String,
+        status: String,
+        lastCaptureAt: Long? = null,
+        error: String? = null
+    ) {
+        resolveParentId(childId) { parentId ->
+            val payload = mutableMapOf<String, Any>(
+                "screenshotRequestStatus" to status
+            )
+            lastCaptureAt?.let { payload["lastScreenshotCapturedAt"] = it }
+            error?.let { payload["screenshotRequestError"] = it }
+            db.collection("parents").document(parentId)
+                .collection("children").document(childId)
+                .update(payload)
+        }
+    }
+
+    fun updateAgeAssessment(
+        childId: String,
+        inferredAge: Int?,
+        ageGroup: String,
+        confidence: Double,
+        source: String,
+        evidence: List<String>
+    ) {
+        resolveParentId(childId) { parentId ->
+            val payload = mutableMapOf<String, Any>(
+                "ageGroup" to ageGroup,
+                "ageDetectionConfidence" to confidence,
+                "ageDetectionSource" to source,
+                "ageDetectionUpdatedAt" to System.currentTimeMillis(),
+                "ageDetectionEvidence" to evidence
+            )
+            inferredAge?.let { payload["age"] = it }
+            db.collection("parents").document(parentId)
+                .collection("children").document(childId)
+                .update(payload)
+        }
     }
 
     fun fetchChildProfile(childId: String, onSuccess: (ChildProfile) -> Unit, onFailure: (Exception) -> Unit) {
@@ -147,6 +244,23 @@ object FirebaseService {
                                 snapshot?.toObject(ChildProfile::class.java)?.let(onUpdate)
                             }
                     }
+                }
+            }
+    }
+
+    private fun resolveParentId(childId: String, onResolved: (String) -> Unit) {
+        val cached = parentIdCache[childId]
+        if (cached != null) {
+            onResolved(cached)
+            return
+        }
+        db.collection("childLinks").document(childId)
+            .get()
+            .addOnSuccessListener { linkDoc ->
+                val parentId = linkDoc.getString("parentId")
+                if (parentId != null) {
+                    parentIdCache[childId] = parentId
+                    onResolved(parentId)
                 }
             }
     }

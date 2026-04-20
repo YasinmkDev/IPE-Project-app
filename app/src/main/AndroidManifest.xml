@@ -32,6 +32,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
 
     <application
         android:allowBackup="true"
@@ -62,11 +64,6 @@
             android:foregroundServiceType="dataSync" />
         
         <service
-            android:name=".services.StorageRestrictionService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-        
-        <service
             android:name=".services.FirebaseService"
             android:exported="false" />
 
@@ -81,6 +78,15 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <service
+            android:name=".services.WebsiteFilterVpnService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
         </service>
 
         <receiver

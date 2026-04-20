@@ -20,7 +20,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -135,7 +134,8 @@ class MainActivity : ComponentActivity() {
                 val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     packageInfo?.longVersionCode ?: 0L
                 } else {
-                    @Suppress("DEPRECATION") packageInfo?.versionCode?.toLong() ?: 0L
+                    @Suppress("DEPRECATION")
+                    packageInfo?.versionCode?.toLong() ?: 0L
                 }
                 appsList.add(AppInfo(appInfo.packageName, appName, versionName, versionCode, (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0)))
             }

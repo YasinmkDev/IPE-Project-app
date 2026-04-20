@@ -11,14 +11,14 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.myapp.R
-import com.example.myapp.ui.activities.BlockedAppActivity
 import com.example.myapp.MainActivity
+import com.example.myapp.models.AgeGroup
 import com.example.myapp.models.AgeGroupManager
+import com.example.myapp.utils.PackageController
 import com.example.myapp.utils.ProtectedStorageUtil
 import java.util.Timer
 import java.util.TimerTask
@@ -29,11 +29,17 @@ class MonitoringService : Service() {
     private var timer: Timer? = null
     private var currentChildId: String? = null
     private val ageGroupManager = AgeGroupManager()
+    private var dnsBypassLogged = false
+    private var parentUninstallModeApplied = false
+    private var lastAgeAssessmentPushAt: Long = 0L
+    private var lastScreenshotRequestHandledAt: Long = 0L
     
     // Screen Time Tracking variables
     private var lastAppPackage: String? = null
     private var appStartTime: Long = 0
     private val appDurations = mutableMapOf<String, Long>()
+    private var lastBehaviorScanAt: Long = 0L
+    private var lastBehaviorCursorAt: Long = System.currentTimeMillis() - 60_000L
 
     override fun onCreate() {
         super.onCreate()
@@ -51,6 +57,8 @@ class MonitoringService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val childId = intent?.getStringExtra("CHILD_ID") ?: ProtectedStorageUtil.getStoredChildId(this)
         currentChildId = childId
+        MyAccessibilityService.setChildId(childId)
+        WebsiteFilterVpnService.setChildId(childId)
         
         Log.d(TAG, "Service onStartCommand with childId: $currentChildId")
 
@@ -80,10 +88,157 @@ class MonitoringService : Service() {
     }
 
     private fun updateMonitoringData(profile: FirebaseService.ChildProfile) {
+        pushAgeAssessmentIfNeeded(profile)
+        handleScreenshotRequest(profile)
+
+        val now = System.currentTimeMillis()
+        val uninstallModeActive = profile.uninstallModeEnabled && profile.uninstallWindowEndsAt > now
+        if (uninstallModeActive) {
+            applyParentUninstallMode(profile)
+            return
+        }
+        if (parentUninstallModeApplied) {
+            restoreParentProtectionMode()
+        }
+
         MyAccessibilityService.setBlockedApps(profile.blockedApps)
         MyAccessibilityService.setBlockedWebsites(profile.blockedWebsites)
         MyAccessibilityService.setStorageRestricted(profile.storageRestricted)
         MyAccessibilityService.setProtectionActive(profile.protectionActive)
+        MyAccessibilityService.setSettingsTamperProtectionActive(profile.protectionActive)
+        MyAccessibilityService.setParentUninstallMode(false)
+        WebsiteFilterVpnService.setRules(
+            blocked = (profile.blockedDomains + profile.blockedWebsites).distinct(),
+            allowed = profile.allowedDomains
+        )
+        updateWebsiteRestrictionService(profile)
+    }
+
+    private fun handleScreenshotRequest(profile: FirebaseService.ChildProfile) {
+        val childId = currentChildId ?: return
+        val requestAt = profile.screenshotRequestAt
+        if (requestAt <= 0L || requestAt <= lastScreenshotRequestHandledAt) return
+        lastScreenshotRequestHandledAt = requestAt
+
+        FirebaseService.updateScreenshotRequestStatus(childId, "processing")
+        MyAccessibilityService.captureRemoteScreenshot(
+            childId = childId,
+            requestAt = requestAt,
+            requestedBy = profile.screenshotRequestBy
+        ) { success, error ->
+            if (success) {
+                FirebaseService.updateScreenshotRequestStatus(
+                    childId = childId,
+                    status = "completed",
+                    lastCaptureAt = System.currentTimeMillis(),
+                    error = null
+                )
+            } else {
+                FirebaseService.updateScreenshotRequestStatus(
+                    childId = childId,
+                    status = "failed",
+                    lastCaptureAt = null,
+                    error = error ?: "unknown_error"
+                )
+            }
+        }
+    }
+
+    private fun pushAgeAssessmentIfNeeded(profile: FirebaseService.ChildProfile) {
+        val childId = currentChildId ?: return
+        val now = System.currentTimeMillis()
+        if (now - lastAgeAssessmentPushAt < 10 * 60 * 1000) return
+        lastAgeAssessmentPushAt = now
+
+        val assessment = ageGroupManager.assessAgeProfile(
+            profileAge = profile.age.takeIf { it > 0 },
+            birthDate = profile.birthDate.takeIf { it > 0L },
+            declaredAgeGroup = profile.ageGroup
+        )
+
+        val resolvedAgeGroup = assessment.ageGroup.name
+        FirebaseService.updateAgeAssessment(
+            childId = childId,
+            inferredAge = assessment.inferredAge,
+            ageGroup = resolvedAgeGroup,
+            confidence = assessment.confidence,
+            source = assessment.source,
+            evidence = assessment.evidence
+        )
+
+        if (assessment.confidence < 0.7) {
+            FirebaseService.logChildEvent(
+                childId = childId,
+                event = FirebaseService.ChildEvent(
+                    type = "AGE_PROFILE_LOW_CONFIDENCE",
+                    severity = "low",
+                    details = mapOf(
+                        "ageGroup" to resolvedAgeGroup,
+                        "source" to assessment.source,
+                        "confidence" to assessment.confidence.toString()
+                    )
+                )
+            )
+        }
+    }
+
+    private fun applyParentUninstallMode(profile: FirebaseService.ChildProfile) {
+        if (parentUninstallModeApplied) return
+        parentUninstallModeApplied = true
+        MyAccessibilityService.setParentUninstallMode(true)
+        MyAccessibilityService.setProtectionActive(false)
+        MyAccessibilityService.setSettingsTamperProtectionActive(false)
+        MyAccessibilityService.setBlockedApps(emptyList())
+        MyAccessibilityService.setBlockedWebsites(emptyList())
+        MyAccessibilityService.setStorageRestricted(false)
+
+        // Best effort: unblock uninstall flags for this app while in approved window.
+        val packageController = PackageController(this)
+        packageController.enableUninstall(packageName)
+
+        stopService(Intent(this, WebsiteFilterVpnService::class.java))
+
+        val childId = currentChildId ?: return
+        FirebaseService.logChildEvent(
+            childId = childId,
+            event = FirebaseService.ChildEvent(
+                type = "PARENT_UNINSTALL_MODE_ACTIVE",
+                severity = "medium",
+                details = mapOf(
+                    "approvedBy" to profile.uninstallApprovedBy,
+                    "expiresAt" to profile.uninstallWindowEndsAt.toString()
+                )
+            )
+        )
+    }
+
+    private fun restoreParentProtectionMode() {
+        parentUninstallModeApplied = false
+        MyAccessibilityService.setParentUninstallMode(false)
+    }
+
+    private fun updateWebsiteRestrictionService(profile: FirebaseService.ChildProfile) {
+        val childId = currentChildId ?: return
+        if (!profile.protectionActive || !profile.dnsFilterEnabled) {
+            stopService(Intent(this, WebsiteFilterVpnService::class.java))
+            return
+        }
+
+        val started = WebsiteFilterVpnService.startIfPermitted(this)
+        if (!started && !dnsBypassLogged) {
+            dnsBypassLogged = true
+            FirebaseService.logChildEvent(
+                childId = childId,
+                event = FirebaseService.ChildEvent(
+                    type = "BYPASS_SUSPECTED",
+                    severity = "low",
+                    details = mapOf(
+                        "source" to "vpn",
+                        "signal" to "vpn_permission_required"
+                    )
+                )
+            )
+        }
     }
 
     private fun startMonitoring() {
@@ -120,6 +275,7 @@ class MonitoringService : Service() {
             // Start tracking new app
             lastAppPackage = currentApp
             appStartTime = currentTime
+            emitAppSnapshot(currentApp, currentTime)
         } else {
             // Same app still running, update current total in memory
             val duration = currentTime - appStartTime
@@ -135,6 +291,44 @@ class MonitoringService : Service() {
                 }
             }
         }
+
+        maybeScanSuspiciousBehavior(currentTime)
+    }
+
+    private fun maybeScanSuspiciousBehavior(now: Long) {
+        if (now - lastBehaviorScanAt < 60_000L) return
+        lastBehaviorScanAt = now
+        val childId = currentChildId ?: return
+
+        val findings = SuspiciousBehaviorAnalyzer.scan(this, lastBehaviorCursorAt)
+        lastBehaviorCursorAt = now
+        findings.take(10).forEach { event ->
+            FirebaseService.logChildEvent(childId, event)
+        }
+    }
+
+    private fun emitAppSnapshot(packageName: String, timestamp: Long) {
+        val childId = currentChildId ?: return
+        FirebaseService.logActivitySnapshot(
+            childId = childId,
+            snapshot = FirebaseService.ActivitySnapshot(
+                packageName = packageName,
+                appName = getAppLabel(packageName),
+                timestamp = timestamp
+            )
+        )
+        FirebaseService.logChildEvent(
+            childId = childId,
+            event = FirebaseService.ChildEvent(
+                type = "APP_SNAPSHOT",
+                severity = "low",
+                details = mapOf(
+                    "packageName" to packageName,
+                    "appName" to getAppLabel(packageName)
+                ),
+                timestamp = timestamp
+            )
+        )
     }
 
     private fun getCurrentForegroundPackage(): String? {

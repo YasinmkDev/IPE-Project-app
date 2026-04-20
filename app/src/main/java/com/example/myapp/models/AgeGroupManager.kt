@@ -19,14 +19,31 @@ enum class AgeGroup(val minAge: Int, val maxAge: Int, val displayName: String) {
         }
 
         fun fromString(name: String): AgeGroup {
-            return try {
-                valueOf(name)
-            } catch (e: Exception) {
-                CHILD
+            val normalized = name.trim().uppercase()
+            return when (normalized) {
+                "TODDLER", "0-5", "0-6" -> TODDLER
+                "CHILD", "6-12", "7-12" -> CHILD
+                "TEEN", "13-17", "13+" -> TEEN
+                "ADULT", "18+", "18-99" -> ADULT
+                else -> {
+                    try {
+                        valueOf(normalized)
+                    } catch (e: Exception) {
+                        CHILD
+                    }
+                }
             }
         }
     }
 }
+
+data class AgeAssessment(
+    val inferredAge: Int?,
+    val ageGroup: AgeGroup,
+    val confidence: Double,
+    val source: String,
+    val evidence: List<String>
+)
 
 data class RestrictionProfile(
     val ageGroup: AgeGroup,
@@ -141,6 +158,65 @@ object RestrictionProfiles {
 }
 
 class AgeGroupManager {
+    fun assessAgeProfile(
+        profileAge: Int?,
+        birthDate: Long?,
+        declaredAgeGroup: String?
+    ): AgeAssessment {
+        val evidence = mutableListOf<String>()
+        val candidates = mutableListOf<Pair<Int, Double>>()
+        var source = "fallback"
+
+        val birthDateAge = birthDate?.takeIf { it > 0L }?.let { calculateAge(it) }
+        if (birthDateAge != null && birthDateAge in 0..99) {
+            candidates.add(birthDateAge to 0.9)
+            evidence.add("birth_date")
+            source = "birth_date"
+        }
+
+        val explicitAge = profileAge?.takeIf { it in 0..99 }
+        if (explicitAge != null) {
+            candidates.add(explicitAge to 0.8)
+            evidence.add("profile_age")
+            if (source == "fallback") source = "profile_age"
+        }
+
+        val declaredGroup = declaredAgeGroup?.takeIf { it.isNotBlank() }?.let { AgeGroup.fromString(it) }
+        if (declaredGroup != null) {
+            val midpoint = (declaredGroup.minAge + declaredGroup.maxAge) / 2
+            candidates.add(midpoint to 0.55)
+            evidence.add("declared_group")
+            if (source == "fallback") source = "declared_group"
+        }
+
+        if (candidates.isEmpty()) {
+            return AgeAssessment(
+                inferredAge = null,
+                ageGroup = AgeGroup.CHILD,
+                confidence = 0.35,
+                source = "fallback_default",
+                evidence = listOf("no_age_data")
+            )
+        }
+
+        val weightedAge = candidates.sumOf { (age, weight) -> age * weight } / candidates.sumOf { it.second }
+        val rounded = weightedAge.toInt().coerceIn(0, 99)
+        val group = AgeGroup.fromAge(rounded)
+        val confidence = when {
+            evidence.size >= 2 -> 0.9
+            source == "birth_date" -> 0.88
+            source == "profile_age" -> 0.82
+            else -> 0.65
+        }
+        return AgeAssessment(
+            inferredAge = rounded,
+            ageGroup = group,
+            confidence = confidence,
+            source = source,
+            evidence = evidence.distinct()
+        )
+    }
+
     fun calculateAge(birthDate: Long): Int {
         val calendar = java.util.Calendar.getInstance()
         val currentYear = calendar.get(java.util.Calendar.YEAR)
