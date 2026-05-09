@@ -17,18 +17,17 @@ class WebsiteFilterVpnService : VpnService() {
         worker = Thread {
             Log.i(TAG, "Website filter VPN service started")
             childId?.let { id ->
-                FirebaseService.logChildEvent(
+                FirebaseService.logEvent(
                     childId = id,
-                    event = FirebaseService.ChildEvent(
-                        type = "DNS_FILTER_ACTIVE",
+                    event = FirebaseService.ActivityEvent(
+                        type = "VPN",
                         severity = "low",
-                        details = mapOf("mode" to "vpn_service")
+                        title = "DNS Protection Active",
+                        details = "VPN-based domain filtering is now running.",
+                        timestamp = System.currentTimeMillis()
                     )
                 )
             }
-            // NOTE: Full packet forwarding requires a full VPN stack.
-            // In this prototype we keep the service lifecycle and policy engine ready,
-            // while URL fallback blocking remains active in accessibility.
             while (running) {
                 try {
                     Thread.sleep(1000)
@@ -44,12 +43,14 @@ class WebsiteFilterVpnService : VpnService() {
         running = false
         worker?.interrupt()
         childId?.let { id ->
-            FirebaseService.logChildEvent(
+            FirebaseService.logEvent(
                 childId = id,
-                event = FirebaseService.ChildEvent(
-                    type = "DNS_FILTER_STOPPED",
+                event = FirebaseService.ActivityEvent(
+                    type = "VPN",
                     severity = "low",
-                    details = mapOf("reason" to "service_destroyed")
+                    title = "DNS Protection Stopped",
+                    details = "The VPN filtering service was terminated.",
+                    timestamp = System.currentTimeMillis()
                 )
             )
         }
@@ -76,22 +77,6 @@ class WebsiteFilterVpnService : VpnService() {
 
             if (matchesAnyDomain(domain, allowedDomains)) return false
             return matchesAnyDomain(domain, blockedDomains)
-        }
-
-        fun recordBypassSignal(childId: String, source: String, signal: String) {
-            val key = "$source:$signal"
-            val count = (bypassCounters[key] ?: 0) + 1
-            bypassCounters[key] = count
-            if (count % 5 == 0) {
-                FirebaseService.logChildEvent(
-                    childId = childId,
-                    event = FirebaseService.ChildEvent(
-                        type = "BYPASS_SUSPECTED",
-                        severity = "medium",
-                        details = mapOf("source" to source, "signal" to signal, "hits" to count.toString())
-                    )
-                )
-            }
         }
 
         private fun matchesAnyDomain(domain: String, rules: List<String>): Boolean {

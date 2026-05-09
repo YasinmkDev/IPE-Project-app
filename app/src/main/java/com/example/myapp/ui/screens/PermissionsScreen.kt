@@ -22,11 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Accessibility
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -92,6 +88,24 @@ fun PermissionsScreen(
                     permissionType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Manifest.permission.POST_NOTIFICATIONS else null
                 ),
                 PermissionItem(
+                    id = "sms",
+                    icon = Icons.Filled.Sms,
+                    title = "SMS Monitoring",
+                    description = "Analyze incoming texts for safety",
+                    isEnabled = false,
+                    isSystemPermission = true,
+                    permissionType = Manifest.permission.READ_SMS
+                ),
+                PermissionItem(
+                    id = "calls",
+                    icon = Icons.Filled.Call,
+                    title = "Call Logs",
+                    description = "Track who your child is talking to",
+                    isEnabled = false,
+                    isSystemPermission = true,
+                    permissionType = Manifest.permission.READ_CALL_LOG
+                ),
+                PermissionItem(
                     id = "usage_access",
                     icon = Icons.Filled.Accessibility,
                     title = "Usage Access",
@@ -123,6 +137,8 @@ fun PermissionsScreen(
         return currentPermissions.map { permission ->
             val isGranted = when (permission.id) {
                 "notifications" -> PermissionChecker.checkNotificationPermission(ctx)
+                "sms" -> ctx.checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+                "calls" -> ctx.checkSelfPermission(Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
                 "usage_access" -> PermissionChecker.checkUsageAccessPermission(ctx)
                 "accessibility" -> PermissionChecker.checkAccessibilityPermission(ctx)
                 "overlay" -> PermissionChecker.checkOverlayPermission(ctx)
@@ -143,22 +159,16 @@ fun PermissionsScreen(
 
     val requestPermission = { item: PermissionItem ->
         when (item.id) {
-            "notifications" -> {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                }
-            }
+            "notifications" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            "sms" -> permissionLauncher.launch(Manifest.permission.READ_SMS)
+            "calls" -> permissionLauncher.launch(Manifest.permission.READ_CALL_LOG)
             "usage_access" -> settingsLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             "accessibility" -> settingsLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            "overlay" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                settingsLauncher.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
-            }
-            "device_admin" -> {
-                settingsLauncher.launch(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                    putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, ComponentName(context, DeviceAdminReceiver::class.java))
-                    putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Required for protection.")
-                })
-            }
+            "overlay" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) settingsLauncher.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
+            "device_admin" -> settingsLauncher.launch(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, ComponentName(context, DeviceAdminReceiver::class.java))
+                putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Required for protection.")
+            })
         }
     }
 
@@ -178,19 +188,19 @@ fun PermissionsScreen(
         Row(modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 16.dp, top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = GreenPrimary) }
             Spacer(modifier = Modifier.width(4.dp))
-            Text(text = "Enable Permissions", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = GreenPrimaryDark)
+            Text(text = "Enable Monitoring", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = GreenPrimaryDark)
         }
 
         LazyColumn(modifier = Modifier.weight(1f).padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(vertical = 16.dp)) {
             item {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     Box(modifier = Modifier.size(80.dp).clip(CircleShape).background(GreenSurface), contentAlignment = Alignment.Center) {
-                        Icon(imageVector = Icons.Filled.Lock, contentDescription = null, tint = GreenPrimary, modifier = Modifier.size(38.dp))
+                        Icon(imageVector = Icons.Filled.Shield, contentDescription = null, tint = GreenPrimary, modifier = Modifier.size(38.dp))
                     }
                     Spacer(modifier = Modifier.height(20.dp))
-                    Text(text = "Initial Setup", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = GreenPrimaryDark)
+                    Text(text = "Advanced Protection", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = GreenPrimaryDark)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = if (!isAdminEnabled) "Please enable Device Admin FIRST." else "Great! Now enable the others.", fontSize = 14.sp, color = if (!isAdminEnabled) Color.Red else GreenPrimary, textAlign = TextAlign.Center)
+                    Text(text = "Please enable all permissions to ensure complete safety monitoring.", fontSize = 14.sp, color = Color.Gray, textAlign = TextAlign.Center)
                 }
             }
 
@@ -216,7 +226,7 @@ fun PermissionsScreen(
                 enabled = !isLoading && allGranted
             ) {
                 if (isLoading) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                else Text(text = if (allGranted) "Finish Setup ✓" else "Complete All Steps", color = Color.White)
+                else Text(text = if (allGranted) "Complete Setup ✓" else "Enable All to Finish", color = Color.White)
             }
         }
     }

@@ -8,15 +8,17 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.webkit.WebView
+import android.webkit.WebResourceRequest
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ProgressBar
-import android.widget.Toast
 import com.example.myapp.R
 import com.example.myapp.services.FirebaseService
+import java.net.URI
 
 class ControlledBrowserActivity : Activity() {
+    private val safeHomeUrl = "https://www.google.com"
     private lateinit var webView: WebView
     private lateinit var editTextUrl: EditText
     private lateinit var buttonGo: Button
@@ -62,13 +64,31 @@ class ControlledBrowserActivity : Activity() {
         webSettings.loadWithOverviewMode = true
 
         webView.webViewClient = object : WebViewClient() {
+            @Deprecated("Deprecated in Java")
             override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
                 return if (isBlockedUrl(url)) {
                     showBlockedMessage()
                     true
                 } else {
-                    view.loadUrl(url)
                     false
+                }
+            }
+
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val requestUrl = request.url?.toString() ?: return false
+                return if (isBlockedUrl(requestUrl)) {
+                    showBlockedMessage()
+                    true
+                } else {
+                    false
+                }
+            }
+
+            override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                if (isBlockedUrl(url)) {
+                    view.stopLoading()
+                    showBlockedMessage()
                 }
             }
 
@@ -88,7 +108,7 @@ class ControlledBrowserActivity : Activity() {
             }
         } else {
             // Default to a safe website
-            loadUrl("https://www.google.com")
+            loadUrl(safeHomeUrl)
         }
     }
 
@@ -107,15 +127,17 @@ class ControlledBrowserActivity : Activity() {
     }
 
     private fun isBlockedUrl(url: String): Boolean {
-        val host = Uri.parse(url).host?.lowercase() ?: return false
+        val host = extractNormalizedHost(url) ?: return false
         return blockedWebsites.any { blockedSite ->
-            host.contains(blockedSite.lowercase())
+            val normalizedBlocked = extractNormalizedHost(blockedSite) ?: blockedSite.trim().lowercase().removePrefix("www.")
+            normalizedBlocked.isNotEmpty() && (host == normalizedBlocked || host.endsWith(".$normalizedBlocked"))
         }
     }
 
     private fun showBlockedMessage() {
-        Toast.makeText(this, "This website is blocked by your parent", Toast.LENGTH_LONG).show()
-        webView.loadUrl("about:blank")
+        progressBar.visibility = View.VISIBLE
+        webView.stopLoading()
+        webView.loadUrl(safeHomeUrl)
     }
 
     private fun loadBlockedWebsites() {
@@ -137,5 +159,17 @@ class ControlledBrowserActivity : Activity() {
 
     companion object {
         private const val TAG = "ControlledBrowserActivity"
+    }
+
+    private fun extractNormalizedHost(raw: String): String? {
+        val input = raw.trim()
+        if (input.isEmpty()) return null
+        return try {
+            val withScheme = if (input.startsWith("http://") || input.startsWith("https://")) input else "https://$input"
+            val host = URI(withScheme).host ?: return null
+            host.lowercase().removePrefix("www.")
+        } catch (_: Exception) {
+            null
+        }
     }
 }

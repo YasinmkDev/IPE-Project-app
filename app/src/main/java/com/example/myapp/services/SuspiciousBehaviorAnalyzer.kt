@@ -14,22 +14,24 @@ object SuspiciousBehaviorAnalyzer {
         "dont tell parents",
         "secret chat",
         "money transfer",
-        "otp"
+        "otp",
+        "drugs",
+        "kill"
     )
 
-    fun scan(context: Context, sinceMs: Long): List<FirebaseService.ChildEvent> {
-        val findings = mutableListOf<FirebaseService.ChildEvent>()
+    fun scan(context: Context, sinceMs: Long): List<FirebaseService.ActivityEvent> {
+        val findings = mutableListOf<FirebaseService.ActivityEvent>()
         findings.addAll(scanSms(context, sinceMs))
         findings.addAll(scanCallLogs(context, sinceMs))
         return findings
     }
 
-    private fun scanSms(context: Context, sinceMs: Long): List<FirebaseService.ChildEvent> {
+    private fun scanSms(context: Context, sinceMs: Long): List<FirebaseService.ActivityEvent> {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
             return emptyList()
         }
 
-        val results = mutableListOf<FirebaseService.ChildEvent>()
+        val results = mutableListOf<FirebaseService.ActivityEvent>()
         val projection = arrayOf(Telephony.Sms.DATE, Telephony.Sms.ADDRESS, Telephony.Sms.BODY)
         val selection = "${Telephony.Sms.DATE} > ?"
         val args = arrayOf(sinceMs.toString())
@@ -44,13 +46,11 @@ object SuspiciousBehaviorAnalyzer {
                     val body = cursor.getString(bodyIdx)?.lowercase() ?: ""
                     val keyword = riskyKeywords.firstOrNull { body.contains(it) } ?: continue
                     results.add(
-                        FirebaseService.ChildEvent(
-                            type = "SUSPICIOUS_SMS",
+                        FirebaseService.ActivityEvent(
+                            type = "SMS",
                             severity = "high",
-                            details = mapOf(
-                                "from" to address,
-                                "keyword" to keyword
-                            ),
+                            title = "Suspicious Message from $address",
+                            details = "Contains keyword: $keyword",
                             timestamp = ts
                         )
                     )
@@ -59,12 +59,12 @@ object SuspiciousBehaviorAnalyzer {
         return results
     }
 
-    private fun scanCallLogs(context: Context, sinceMs: Long): List<FirebaseService.ChildEvent> {
+    private fun scanCallLogs(context: Context, sinceMs: Long): List<FirebaseService.ActivityEvent> {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) {
             return emptyList()
         }
 
-        val results = mutableListOf<FirebaseService.ChildEvent>()
+        val results = mutableListOf<FirebaseService.ActivityEvent>()
         val projection = arrayOf(CallLog.Calls.DATE, CallLog.Calls.NUMBER, CallLog.Calls.DURATION, CallLog.Calls.TYPE)
         val selection = "${CallLog.Calls.DATE} > ?"
         val args = arrayOf(sinceMs.toString())
@@ -79,15 +79,15 @@ object SuspiciousBehaviorAnalyzer {
                     val number = cursor.getString(numberIdx) ?: "unknown"
                     val duration = cursor.getLong(durationIdx)
                     val type = cursor.getInt(typeIdx)
+                    
+                    // Simple pattern: Many missed calls from unknown number or short duration calls at night
                     if (type == CallLog.Calls.MISSED_TYPE && duration == 0L) {
                         results.add(
-                            FirebaseService.ChildEvent(
-                                type = "SUSPICIOUS_CALL_PATTERN",
+                            FirebaseService.ActivityEvent(
+                                type = "CALL",
                                 severity = "medium",
-                                details = mapOf(
-                                    "number" to number,
-                                    "reason" to "repeated_missed_call"
-                                ),
+                                title = "Missed Call from $number",
+                                details = "Unanswered call detected",
                                 timestamp = ts
                             )
                         )

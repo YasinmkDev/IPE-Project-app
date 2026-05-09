@@ -1,6 +1,7 @@
 package com.example.myapp.services
 
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.IgnoreExtraProperties
 import com.google.firebase.firestore.PropertyName
 import com.google.firebase.firestore.ktx.firestore
@@ -8,7 +9,6 @@ import com.google.firebase.ktx.Firebase
 
 object FirebaseService {
     private val db: FirebaseFirestore = Firebase.firestore
-    private val parentIdCache = mutableMapOf<String, String>()
 
     @IgnoreExtraProperties
     data class ChildProfile(
@@ -17,30 +17,20 @@ object FirebaseService {
         val name: String = "",
         val age: Int = 0,
         val ageGroup: String = "",
-        val birthDate: Long = 0L,
-        val ageDetectionConfidence: Double = 0.0,
-        val ageDetectionSource: String = "",
-        val ageDetectionUpdatedAt: Long = 0L,
-        val screenshotRequestAt: Long = 0L,
-        val screenshotRequestBy: String = "",
-        val screenshotRequestStatus: String = "",
         val pairingCode: String = "",
         val blockedApps: List<String> = emptyList(),
         val blockedWebsites: List<String> = emptyList(),
-        val blockedDomains: List<String> = emptyList(),
-        val allowedDomains: List<String> = emptyList(),
         val allowedApps: List<String> = emptyList(),
         val allowedWebsites: List<String> = emptyList(),
         val storageRestricted: Boolean = false,
-        val dnsFilterEnabled: Boolean = false,
-        val uninstallModeEnabled: Boolean = false,
-        val uninstallWindowEndsAt: Long = 0L,
-        val uninstallApprovedBy: String = "",
         @get:PropertyName("protectionActive")
         @set:PropertyName("protectionActive")
         var protectionActive: Boolean = true,
         val linkedAt: Any? = null,
-        val createdAt: Any? = null
+        val createdAt: Any? = null,
+        val screenshotRequestAt: Long = 0L,
+        val screenshotRequestBy: String = "",
+        val screenshotRequestStatus: String = ""
     )
 
     data class AppInfo(
@@ -50,218 +40,177 @@ object FirebaseService {
         val versionCode: Long = 0L,
         @get:PropertyName("isSystemApp")
         @set:PropertyName("isSystemApp")
-        var isSystemApp: Boolean = false
+        var isSystemApp: Boolean = false,
+        val icon: String? = null
     )
 
-    // New Data Class for Screen Time Tracking
-    data class ScreenTimeData(
-        val packageName: String = "",
-        val appName: String = "",
-        val totalTimeVisible: Long = 0L, // in milliseconds
-        val lastUpdated: Long = System.currentTimeMillis()
-    )
-
-    data class ChildEvent(
-        val type: String = "",
+    data class ActivityEvent(
+        val type: String = "", 
         val severity: String = "low",
-        val details: Map<String, String> = emptyMap(),
+        val title: String = "",
+        val details: String = "",
         val timestamp: Long = System.currentTimeMillis()
     )
 
-    data class ActivitySnapshot(
-        val packageName: String = "",
-        val appName: String = "",
-        val timestamp: Long = System.currentTimeMillis(),
-        val source: String = "foreground_tracker"
-    )
-
-    data class RemoteScreenshot(
-        val imageBase64: String = "",
-        val mimeType: String = "image/jpeg",
-        val capturedAt: Long = System.currentTimeMillis(),
-        val requestedBy: String = "",
-        val requestAt: Long = 0L
-    )
-
     fun resolvePairingCode(pairingCode: String, onSuccess: (String, String) -> Unit, onFailure: (Exception) -> Unit) {
-        db.collection("pairingCodes").document(pairingCode)
-            .get()
-            .addOnSuccessListener { document ->
-                if (document.exists()) {
-                    val childId = document.getString("childId")
-                    val parentId = document.getString("parentId")
-                    if (childId != null && parentId != null) {
-                        onSuccess(childId, parentId)
-                    } else {
-                        onFailure(Exception("Child ID or Parent ID not found"))
-                    }
-                } else {
-                    onFailure(Exception("Pairing code not found"))
-                }
+        db.collection("pairingCodes").document(pairingCode).get()
+            .addOnSuccessListener { doc ->
+                val cid = doc.getString("childId")
+                val pid = doc.getString("parentId")
+                if (cid != null && pid != null) onSuccess(cid, pid) else onFailure(Exception("Invalid"))
             }
             .addOnFailureListener(onFailure)
     }
 
-    fun markDeviceAsLinked(childId: String, parentId: String, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
-        val childRef = db.collection("parents").document(parentId)
-            .collection("children").document(childId)
-        
-        childRef.update("linkedAt", com.google.firebase.Timestamp.now(), "protectionActive", true)
-            .addOnSuccessListener { onSuccess() }
+    fun logEvent(childId: String, event: ActivityEvent) {
+        db.collection("childLinks").document(childId).get().addOnSuccessListener { link ->
+            val pid = link.getString("parentId") ?: return@addOnSuccessListener
+            db.collection("parents").document(pid).collection("children").document(childId)
+                .collection("events").add(event)
+        }
+    }
+
+    // FIXED: Using "imageBase64" to match the Admin Panel's RemoteScreenshotsTab.tsx
+    fun uploadRemoteScreenshot(
+        childId: String,
+        base64Image: String,
+        requestAt: Long,
+        requestedBy: String,
+        onSuccess: () -> Unit,
+        onFailure: (Exception) -> Unit
+    ) {
+        db.collection("childLinks").document(childId).get()
+            .addOnSuccessListener { link ->
+                val pid = link.getString("parentId")
+                if (pid.isNullOrBlank()) {
+                    onFailure(Exception("parent_link_not_found"))
+                    return@addOnSuccessListener
+                }
+                val now = System.currentTimeMillis()
+                val data = mapOf(
+                    "imageBase64" to base64Image,
+                    "capturedAt" to now,
+                    "mimeType" to "image/jpeg",
+                    "requestedBy" to requestedBy,
+                    "requestAt" to requestAt
+                )
+                db.collection("parents").document(pid).collection("children").document(childId)
+                    .collection("remoteScreenshots").add(data)
+                    .addOnSuccessListener {
+                        db.collection("parents").document(pid).collection("children").document(childId)
+                            .update("lastScreenshotCapturedAt", now)
+                            .addOnSuccessListener { onSuccess() }
+                            .addOnFailureListener { onSuccess() }
+                    }
+                    .addOnFailureListener(onFailure)
+            }
             .addOnFailureListener(onFailure)
+    }
+
+    fun updateScreenshotRequestStatus(childId: String, status: String, error: String? = null) {
+        db.collection("childLinks").document(childId).get().addOnSuccessListener { link ->
+            val pid = link.getString("parentId") ?: return@addOnSuccessListener
+            val update = mutableMapOf<String, Any>("screenshotRequestStatus" to status)
+            if (error != null) update["screenshotRequestError"] = error
+            db.collection("parents").document(pid).collection("children").document(childId).update(update)
+        }
     }
 
     fun uploadInstalledApps(childId: String, apps: List<AppInfo>) {
-        db.collection("childLinks").document(childId)
-            .get()
-            .addOnSuccessListener { linkDoc ->
-                if (linkDoc.exists()) {
-                    val parentId = linkDoc.getString("parentId")
-                    if (parentId != null) {
-                        apps.forEach { app ->
-                            db.collection("parents").document(parentId)
-                                .collection("children").document(childId)
-                                .collection("installedApps")
-                                .document(app.packageName)
-                                .set(app)
-                        }
-                    }
-                }
+        db.collection("childLinks").document(childId).get().addOnSuccessListener { link ->
+            val pid = link.getString("parentId") ?: return@addOnSuccessListener
+            apps.forEach { app ->
+                db.collection("parents").document(pid).collection("children").document(childId)
+                    .collection("installedApps").document(app.packageName).set(app)
             }
-    }
-
-    // New: Update Screen Time for a specific app
-    fun updateAppScreenTime(childId: String, data: ScreenTimeData) {
-        resolveParentId(childId) { parentId ->
-            db.collection("parents").document(parentId)
-                .collection("children").document(childId)
-                .collection("screenTime")
-                .document(data.packageName)
-                .set(data)
         }
     }
 
-    fun logChildEvent(childId: String, event: ChildEvent) {
-        resolveParentId(childId) { parentId ->
-            db.collection("parents").document(parentId)
-                .collection("children").document(childId)
-                .collection("events")
-                .add(event)
+    fun updateAppScreenTime(childId: String, data: Any) {
+        db.collection("childLinks").document(childId).get().addOnSuccessListener { link ->
+            val pid = link.getString("parentId") ?: return@addOnSuccessListener
+            val packageName = if (data is Map<*, *>) data["packageName"] as? String else null
+            if (packageName != null) {
+                db.collection("parents").document(pid).collection("children").document(childId)
+                    .collection("screenTime").document(packageName).set(data)
+            }
         }
     }
 
-    fun logActivitySnapshot(childId: String, snapshot: ActivitySnapshot) {
-        resolveParentId(childId) { parentId ->
-            db.collection("parents").document(parentId)
-                .collection("children").document(childId)
-                .collection("activitySnapshots")
-                .add(snapshot)
-        }
-    }
-
-    fun logRemoteScreenshot(childId: String, screenshot: RemoteScreenshot) {
-        resolveParentId(childId) { parentId ->
-            db.collection("parents").document(parentId)
-                .collection("children").document(childId)
-                .collection("remoteScreenshots")
-                .add(screenshot)
-        }
-    }
-
-    fun updateScreenshotRequestStatus(
+    fun uploadActivitySnapshot(
         childId: String,
-        status: String,
-        lastCaptureAt: Long? = null,
-        error: String? = null
+        packageName: String,
+        appName: String,
+        imageBase64: String? = null
     ) {
-        resolveParentId(childId) { parentId ->
-            val payload = mutableMapOf<String, Any>(
-                "screenshotRequestStatus" to status
+        db.collection("childLinks").document(childId).get().addOnSuccessListener { link ->
+            val pid = link.getString("parentId") ?: return@addOnSuccessListener
+            val snapshot = mutableMapOf<String, Any>(
+                "packageName" to packageName,
+                "appName" to appName,
+                "timestamp" to System.currentTimeMillis()
             )
-            lastCaptureAt?.let { payload["lastScreenshotCapturedAt"] = it }
-            error?.let { payload["screenshotRequestError"] = it }
-            db.collection("parents").document(parentId)
-                .collection("children").document(childId)
-                .update(payload)
+            if (!imageBase64.isNullOrBlank()) {
+                snapshot["image"] = imageBase64
+                snapshot["imageBase64"] = imageBase64
+            }
+            db.collection("parents").document(pid).collection("children").document(childId)
+                .collection("activitySnapshots").add(snapshot)
         }
     }
 
-    fun updateAgeAssessment(
+    fun markDeviceAsLinked(
         childId: String,
-        inferredAge: Int?,
-        ageGroup: String,
-        confidence: Double,
-        source: String,
-        evidence: List<String>
+        parentId: String,
+        onSuccess: () -> Unit,
+        onFailure: (Exception) -> Unit
     ) {
-        resolveParentId(childId) { parentId ->
-            val payload = mutableMapOf<String, Any>(
-                "ageGroup" to ageGroup,
-                "ageDetectionConfidence" to confidence,
-                "ageDetectionSource" to source,
-                "ageDetectionUpdatedAt" to System.currentTimeMillis(),
-                "ageDetectionEvidence" to evidence
-            )
-            inferredAge?.let { payload["age"] = it }
-            db.collection("parents").document(parentId)
-                .collection("children").document(childId)
-                .update(payload)
-        }
-    }
+        val linkData = mapOf(
+            "childId" to childId,
+            "parentId" to parentId,
+            "linkedAt" to FieldValue.serverTimestamp()
+        )
 
-    fun fetchChildProfile(childId: String, onSuccess: (ChildProfile) -> Unit, onFailure: (Exception) -> Unit) {
-        db.collection("childLinks").document(childId)
-            .get()
-            .addOnSuccessListener { linkDoc ->
-                if (linkDoc.exists()) {
-                    val parentId = linkDoc.getString("parentId")
-                    if (parentId != null) {
-                        db.collection("parents").document(parentId)
-                            .collection("children").document(childId)
-                            .get()
-                            .addOnSuccessListener { document ->
-                                val profile = document.toObject(ChildProfile::class.java)
-                                profile?.let(onSuccess) ?: onFailure(Exception("Profile null"))
+        db.collection("childLinks").document(childId).set(linkData)
+            .addOnSuccessListener {
+                db.collection("parents").document(parentId).collection("children").document(childId)
+                    .update(mapOf("linkedAt" to FieldValue.serverTimestamp(), "parentId" to parentId))
+                    .addOnSuccessListener { onSuccess() }
+                    .addOnFailureListener { updateErr ->
+                        // Child doc may not exist yet; create minimal record so onboarding can complete.
+                        db.collection("parents").document(parentId).collection("children").document(childId)
+                            .set(
+                                mapOf(
+                                    "childId" to childId,
+                                    "parentId" to parentId,
+                                    "linkedAt" to FieldValue.serverTimestamp()
+                                ),
+                                com.google.firebase.firestore.SetOptions.merge()
+                            )
+                            .addOnSuccessListener { onSuccess() }
+                            .addOnFailureListener { createErr ->
+                                onFailure(Exception("Failed to link device: ${updateErr.message ?: createErr.message}"))
                             }
-                            .addOnFailureListener(onFailure)
                     }
-                }
             }
             .addOnFailureListener(onFailure)
     }
 
-    fun listenToChildProfileUpdates(childId: String, onUpdate: (ChildProfile) -> Unit, onError: (Exception) -> Unit) {
-        db.collection("childLinks").document(childId)
-            .get()
-            .addOnSuccessListener { linkDoc ->
-                if (linkDoc.exists()) {
-                    val parentId = linkDoc.getString("parentId")
-                    if (parentId != null) {
-                        db.collection("parents").document(parentId)
-                            .collection("children").document(childId)
-                            .addSnapshotListener { snapshot, e ->
-                                if (e != null) { onError(e); return@addSnapshotListener }
-                                snapshot?.toObject(ChildProfile::class.java)?.let(onUpdate)
-                            }
-                    }
-                }
-            }
+    fun fetchChildProfile(childId: String, onSuccess: (ChildProfile) -> Unit, onFailure: (Exception) -> Unit) {
+        db.collection("childLinks").document(childId).get().addOnSuccessListener { link ->
+            val pid = link.getString("parentId") ?: return@addOnSuccessListener
+            db.collection("parents").document(pid).collection("children").document(childId).get()
+                .addOnSuccessListener { doc -> doc.toObject(ChildProfile::class.java)?.let(onSuccess) ?: onFailure(Exception("Null")) }
+        }
     }
 
-    private fun resolveParentId(childId: String, onResolved: (String) -> Unit) {
-        val cached = parentIdCache[childId]
-        if (cached != null) {
-            onResolved(cached)
-            return
-        }
-        db.collection("childLinks").document(childId)
-            .get()
-            .addOnSuccessListener { linkDoc ->
-                val parentId = linkDoc.getString("parentId")
-                if (parentId != null) {
-                    parentIdCache[childId] = parentId
-                    onResolved(parentId)
+    fun listenToChildProfileUpdates(childId: String, onUpdate: (ChildProfile) -> Unit, onError: (Exception) -> Unit) {
+        db.collection("childLinks").document(childId).get().addOnSuccessListener { link ->
+            val pid = link.getString("parentId") ?: return@addOnSuccessListener
+            db.collection("parents").document(pid).collection("children").document(childId)
+                .addSnapshotListener { snap, e ->
+                    if (e != null) onError(e) else snap?.toObject(ChildProfile::class.java)?.let(onUpdate)
                 }
-            }
+        }
     }
 }

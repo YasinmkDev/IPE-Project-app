@@ -36,6 +36,8 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.google.zxing.*
 import com.google.zxing.common.HybridBinarizer
+import com.google.zxing.DecodeHintType
+import com.google.zxing.BarcodeFormat
 import java.util.concurrent.Executors
 
 @OptIn(ExperimentalPermissionsApi::class)
@@ -101,14 +103,33 @@ private fun CameraPreviewAlternative(
                                 buffer.rewind()
 
                                 val source = PlanarYUVLuminanceSource(
-                                    data, imageProxy.width, imageProxy.height, 0, 0, imageProxy.width, imageProxy.height, false
+                                    data,
+                                    imageProxy.width,
+                                    imageProxy.height,
+                                    0,
+                                    0,
+                                    imageProxy.width,
+                                    imageProxy.height,
+                                    false
                                 )
 
-                                val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
-                                val reader = MultiFormatReader()
+                                val rotatedSource = if (imageProxy.imageInfo.rotationDegrees == 90 || imageProxy.imageInfo.rotationDegrees == 270) {
+                                    source.rotateCounterClockwise()
+                                } else {
+                                    source
+                                }
+                                val binaryBitmap = BinaryBitmap(HybridBinarizer(rotatedSource))
+                                val reader = MultiFormatReader().apply {
+                                    setHints(
+                                        mapOf(
+                                            DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+                                            DecodeHintType.TRY_HARDER to true
+                                        )
+                                    )
+                                }
 
                                 try {
-                                    val result = reader.decode(binaryBitmap)
+                                    val result = reader.decodeWithState(binaryBitmap)
                                     if (scannedCode == null) {
                                         scannedCode = result.text
                                         onQRCodeScanned(result.text)
@@ -116,6 +137,7 @@ private fun CameraPreviewAlternative(
                                 } catch (e: Exception) {
                                     // No QR code found
                                 } finally {
+                                    reader.reset()
                                     imageProxy.close()
                                 }
                             }

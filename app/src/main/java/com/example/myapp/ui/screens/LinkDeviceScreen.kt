@@ -53,17 +53,6 @@ fun LinkDeviceScreen(
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    
-    LaunchedEffect(navBackStackEntry) {
-        val savedStateHandle = navBackStackEntry?.savedStateHandle
-        val scannedCode = savedStateHandle?.get<String>("scannedCode")
-        if (!scannedCode.isNullOrEmpty()) {
-            deviceCode = scannedCode
-            savedStateHandle.remove<String>("scannedCode")
-        }
-    }
-
     val handleLink = {
         if (deviceCode.length == 6) {
             isLoading = true
@@ -73,6 +62,21 @@ fun LinkDeviceScreen(
                 if (!success) {
                     errorMessage = "Invalid or expired pairing code. Please try again."
                 }
+            }
+        }
+    }
+
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    
+    LaunchedEffect(navBackStackEntry) {
+        val savedStateHandle = navBackStackEntry?.savedStateHandle
+        val scannedCode = savedStateHandle?.get<String>("scannedCode")
+        if (!scannedCode.isNullOrEmpty()) {
+            val normalized = extractPairingCode(scannedCode)
+            deviceCode = normalized ?: scannedCode
+            savedStateHandle.remove<String>("scannedCode")
+            if (normalized != null && normalized.length == 6) {
+                handleLink()
             }
         }
     }
@@ -338,4 +342,13 @@ fun LinkDeviceScreen(
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
+}
+
+private fun extractPairingCode(raw: String): String? {
+    val trimmed = raw.trim()
+    if (trimmed.matches(Regex("^\\d{6}$"))) return trimmed
+
+    // Accept QR values that may include a URL or labels and extract the first 6-digit token.
+    val match = Regex("""(?<!\d)(\d{6})(?!\d)""").find(trimmed)
+    return match?.groupValues?.get(1)
 }

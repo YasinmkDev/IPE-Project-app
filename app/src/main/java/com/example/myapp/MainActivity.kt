@@ -33,7 +33,10 @@ import com.example.myapp.ui.theme.GreenPrimary
 import com.example.myapp.ui.theme.GreenPrimaryDark
 import com.example.myapp.ui.theme.IPETheme
 import com.example.myapp.utils.ProtectedStorageUtil
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val TAG = "MainActivity"
@@ -76,7 +79,7 @@ class MainActivity : ComponentActivity() {
                             startDestination = startDest,
                             onSetupComplete = { childId ->
                                 ProtectedStorageUtil.saveChildId(this@MainActivity, childId)
-                                uploadInstalledApps(childId)
+                                uploadInstalledAppsAsync(childId)
                                 requestBatteryExemption()
                                 startMonitoringService(childId)
                                 navController.navigate(Screen.AlreadyLinked.createRoute(childId)) {
@@ -122,25 +125,39 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun uploadInstalledApps(childId: String) {
-        val pm = packageManager
-        val appsList = mutableListOf<AppInfo>()
-        val packages = pm.getInstalledApplications(0)
-        for (appInfo in packages) {
-            if (appInfo.packageName != packageName) { 
-                val appName = pm.getApplicationLabel(appInfo).toString()
-                val packageInfo = try { pm.getPackageInfo(appInfo.packageName, 0) } catch (e: Exception) { null }
-                val versionName = packageInfo?.versionName ?: ""
-                val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    packageInfo?.longVersionCode ?: 0L
-                } else {
-                    @Suppress("DEPRECATION")
-                    packageInfo?.versionCode?.toLong() ?: 0L
+    private fun uploadInstalledAppsAsync(childId: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val pm = packageManager
+                val appsList = mutableListOf<AppInfo>()
+                val packages = pm.getInstalledApplications(0)
+                for (appInfo in packages) {
+                    if (appInfo.packageName != packageName) {
+                        val appName = pm.getApplicationLabel(appInfo).toString()
+                        val packageInfo = try { pm.getPackageInfo(appInfo.packageName, 0) } catch (e: Exception) { null }
+                        val versionName = packageInfo?.versionName ?: ""
+                        val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            packageInfo?.longVersionCode ?: 0L
+                        } else {
+                            @Suppress("DEPRECATION")
+                            packageInfo?.versionCode?.toLong() ?: 0L
+                        }
+                        appsList.add(
+                            AppInfo(
+                                appInfo.packageName,
+                                appName,
+                                versionName,
+                                versionCode,
+                                (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0)
+                            )
+                        )
+                    }
                 }
-                appsList.add(AppInfo(appInfo.packageName, appName, versionName, versionCode, (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0)))
+                FirebaseService.uploadInstalledApps(childId, appsList)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to upload installed apps: ${e.message}", e)
             }
         }
-        FirebaseService.uploadInstalledApps(childId, appsList)
     }
 
     private fun startMonitoringService(childId: String) {
