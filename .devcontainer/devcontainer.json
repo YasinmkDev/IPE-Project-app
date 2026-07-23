@@ -1,0 +1,30 @@
+{
+  "name": "Kotlin Compose Android",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {
+    "ghcr.io/devcontainers-contrib/features/gradle-sdkman:2": {
+      "version": "latest",
+      "jdkVersion": "17",
+      "jdkDistro": "ms"
+    },
+    "ghcr.io/devcontainers-contrib/features/kotlin-sdkman:2": {
+      "version": "latest",
+      "jdkVersion": "17"
+    },
+    "ghcr.io/akhildevelops/devcontainer-features/android-cli:0": {},
+    "ghcr.io/jarrodcolburn/features/android-sdk:0": {
+      "platforms": "34",
+      "build-tools": "34.0.0"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "fwcd.kotlin",
+        "vscjava.vscode-java-pack",
+        "android-devkit.android-devkit"
+      ]
+    }
+  },
+  "forwardPorts": [8080]
+}   
